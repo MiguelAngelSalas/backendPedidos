@@ -10,6 +10,7 @@ const { v4: uuidv4 } = require('uuid'); // Agregado para generar UUIDs
 dotenv.config();
 const app = express();
 app.use(cors());
+const PORT = process.env.PORT || 3001;
 
 // Asegurarse de que la carpeta temporal exista
 const tempPath = path.join(__dirname, 'temp');
@@ -71,7 +72,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     };
 
     console.log('📦 Pedido recibido:', pedido);
-
+    app.listen(PORT, () => {
+      console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
+    });
     res.json({ message: 'Pedido recibido correctamente', pedido });
   } catch (error) {
     console.error('❌ Error al subir a Cloudinary:', error);
