@@ -72,9 +72,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     };
 
     console.log('📦 Pedido recibido:', pedido);
-    app.listen(PORT, () => {
-      console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
-    });
+    
     res.json({ message: 'Pedido recibido correctamente', pedido });
   } catch (error) {
     console.error('❌ Error al subir a Cloudinary:', error);
@@ -82,6 +80,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-app.listen(3001, () => {
-  console.log('🚀 Servidor Express corriendo en http://localhost:3001');
-});
+app.listen(PORT, () => {
+      console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
+    });
