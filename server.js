@@ -5,8 +5,7 @@ const dotenv = require('dotenv');
 const { v2: cloudinary } = require('cloudinary');
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
-const pdfParse = require('pdf-parse'); // 👈 agregado para PDFs
+const { v4: uuidv4 } = require('uuid'); // Agregado para generar UUIDs
 
 dotenv.config();
 const app = express();
@@ -44,54 +43,36 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 
   try {
-    const filePath = req.file.path;
-    const ext = path.extname(req.file.originalname).toLowerCase();
-    let totalPaginas = 0;
+    // Sanitizar nombre del cliente y usar UUID para garantizar unicidad
+    const cleanName = (clientName || 'cliente').trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const uniqueName = cleanName + '-' + uuidv4(); // Generamos un UUID único
 
-    // 📄 Conteo de páginas según tipo de archivo
-    if (ext === '.pdf') {
-      const dataBuffer = fs.readFileSync(filePath);
-      const data = await pdfParse(dataBuffer);
-      totalPaginas = data.numpages;
-    } else if (ext === '.docx' || ext === '.doc') {
-      // Estimación básica para Word (podés mejorar esto con librerías como mammoth)
-      totalPaginas = 1;
-    } else {
-      return res.status(400).json({ message: 'Tipo de archivo no soportado.' });
-    }
-
-    // 🧼 Sanitizar nombre y generar ID único
-    const cleanName = (clientName || 'cliente')
-      .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[^\w\-]/g, '');
-    const uniqueName = `${cleanName}-${uuidv4()}`;
     const timestamp = Date.now();
     const publicId = `${uniqueName}-${paperType}-${timestamp}`;
 
-    // ☁️ Subir a Cloudinary
-    const result = await cloudinary.uploader.upload(filePath, {
-      resource_type: 'auto',
-      folder: 'pedidos',
-      public_id: publicId,
-      use_filename: false,
-      unique_filename: false,
-      overwrite: true,
+    // Subir a Cloudinary con el nuevo nombre
+    const result = await cloudinary.uploader.upload(req.file.path, {
+        resource_type: 'auto',
+        folder: 'pedidos',
+        public_id: publicId,
+        use_filename: false,   // No usar el nombre original
+        unique_filename: false,  // Usamos un public_id personalizado
+        overwrite: true,
     });
 
-    // 🧹 Eliminar archivo temporal
-    fs.unlinkSync(filePath);
+    // Eliminar archivo temporal
+    fs.unlinkSync(req.file.path);
 
-    // 📦 Armar respuesta
+    // Crear la respuesta con la URL del archivo subido
     const pedido = {
       archivo: result.secure_url,
       tipoPapel: paperType,
       cliente: clientName || 'Sin nombre',
       nombreArchivo: result.public_id,
-      paginas: totalPaginas,
     };
 
     console.log('📦 Pedido recibido:', pedido);
+    
     res.json({ message: 'Pedido recibido correctamente', pedido });
   } catch (error) {
     console.error('❌ Error al subir a Cloudinary:', error);
@@ -100,5 +81,5 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
-});
+      console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
+    });
