@@ -31,14 +31,19 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configuración de multer para subir archivos temporalmente
+// Configuración Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === "application/pdf") cb(null, true);
+    else cb(new Error("Solo se permiten archivos PDF"), false);
+  }
+});
 
-// Endpoint principal de subida (solo PDF)
 app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName } = req.body;
 
@@ -46,48 +51,35 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     return res.status(400).json({ message: 'Faltan datos: archivo o tipo de papel.' });
   }
 
-  // Verificar que el archivo sea PDF
-  if (req.file.mimetype !== 'application/pdf') {
-    // Eliminar archivo temporal
-    fs.unlinkSync(req.file.path);
-    return res.status(400).json({ message: 'Solo se permiten archivos PDF.' });
-  }
-
   try {
-    // Sanitizar nombre del cliente y generar ID único
+    // Nombre único usando UUID
     const cleanName = (clientName || 'cliente').trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
-    const uniqueName = `${cleanName}-${uuidv4()}`;
+    const uniqueName = cleanName + '-' + uuidv4();
     const timestamp = Date.now();
     const publicId = `${uniqueName}-${paperType}-${timestamp}`;
 
-    // Subir a Cloudinary
+    // Subida a Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
         resource_type: 'auto',
         folder: 'pedidos',
         public_id: publicId,
-        use_filename: false, 
-        unique_filename: false, 
+        use_filename: false,
+        unique_filename: false,
         overwrite: true,
     });
 
     // Eliminar archivo temporal
     fs.unlinkSync(req.file.path);
 
-    // Placeholder: contar páginas PDF (aquí podrías agregar librería si quieres)
-    const pages = 1;
-    const price = pages * 10; // Precio ejemplo
-
+    // Respuesta al frontend
     const pedido = {
       archivo: result.secure_url,
       tipoPapel: paperType,
       cliente: clientName || 'Sin nombre',
       nombreArchivo: result.public_id,
-      pages,
-      price,
     };
 
     console.log('📦 Pedido recibido:', pedido);
-    
     res.json({ message: 'Pedido recibido correctamente', pedido });
   } catch (error) {
     console.error('❌ Error al subir a Cloudinary:', error);
