@@ -5,70 +5,85 @@ const dotenv = require('dotenv');
 const { v2: cloudinary } = require('cloudinary');
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid'); // Agregado para generar UUIDs
+const { v4: uuidv4 } = require('uuid');
 
 dotenv.config();
 const app = express();
-app.use(cors());
+
+// Configurar CORS para tu dominio
+app.use(cors({
+  origin: "https://impresionesatucasa.vercel.app", // Cambiá por tu dominio real
+  methods: ["GET", "POST"]
+}));
+
 const PORT = process.env.PORT || 3001;
 
-// Asegurarse de que la carpeta temporal exista
+// Crear carpeta temporal si no existe
 const tempPath = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath);
 }
 
-// Configuración Cloudinary
+// Configurar Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configuración multer
+// Configuración de multer para subir archivos temporalmente
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
 
-// Endpoint principal
+// Endpoint principal de subida (solo PDF)
 app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName } = req.body;
-  console.log('BODY:', req.body);
-  console.log('FILE:', req.file);
 
   if (!req.file || !paperType) {
     return res.status(400).json({ message: 'Faltan datos: archivo o tipo de papel.' });
   }
 
-  try {
-    // Sanitizar nombre del cliente y usar UUID para garantizar unicidad
-    const cleanName = (clientName || 'cliente').trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
-    const uniqueName = cleanName + '-' + uuidv4(); // Generamos un UUID único
+  // Verificar que el archivo sea PDF
+  if (req.file.mimetype !== 'application/pdf') {
+    // Eliminar archivo temporal
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ message: 'Solo se permiten archivos PDF.' });
+  }
 
+  try {
+    // Sanitizar nombre del cliente y generar ID único
+    const cleanName = (clientName || 'cliente').trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const uniqueName = `${cleanName}-${uuidv4()}`;
     const timestamp = Date.now();
     const publicId = `${uniqueName}-${paperType}-${timestamp}`;
 
-    // Subir a Cloudinary con el nuevo nombre
+    // Subir a Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
         resource_type: 'auto',
         folder: 'pedidos',
         public_id: publicId,
-        use_filename: false,   // No usar el nombre original
-        unique_filename: false,  // Usamos un public_id personalizado
+        use_filename: false, 
+        unique_filename: false, 
         overwrite: true,
     });
 
     // Eliminar archivo temporal
     fs.unlinkSync(req.file.path);
 
-    // Crear la respuesta con la URL del archivo subido
+    // Placeholder: contar páginas PDF (aquí podrías agregar librería si quieres)
+    const pages = 1;
+    const price = pages * 10; // Precio ejemplo
+
     const pedido = {
       archivo: result.secure_url,
       tipoPapel: paperType,
       cliente: clientName || 'Sin nombre',
       nombreArchivo: result.public_id,
+      pages,
+      price,
     };
 
     console.log('📦 Pedido recibido:', pedido);
@@ -80,10 +95,12 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
+// Endpoint de prueba
 app.get("/ping", (req, res) => {
   res.send("pong");
 });
 
+// Iniciar servidor
 app.listen(PORT, () => {
-      console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
-    });
+  console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
+});
