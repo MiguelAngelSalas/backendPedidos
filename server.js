@@ -5,22 +5,24 @@ const dotenv = require('dotenv');
 const { v2: cloudinary } = require('cloudinary');
 const fs = require('fs');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 const pdfParse = require('pdf-parse');
 
 dotenv.config();
 const app = express();
-
-// Configuración CORS
-app.use(cors({
-  origin: "https://impresionesatucasa.vercel.app", // reemplazá con tu dominio real
-  methods: ["GET", "POST"]
-}));
-
 const PORT = process.env.PORT || 3001;
+
+// CORS: solo permitir tu frontend
+app.use(cors({
+  origin: "https://impresionesatucasa.vercel.app",
+  methods: ["POST"]
+}));
 
 // Crear carpeta temporal si no existe
 const tempPath = path.join(__dirname, 'temp');
-if (!fs.existsSync(tempPath)) fs.mkdirSync(tempPath);
+if (!fs.existsSync(tempPath)) {
+  fs.mkdirSync(tempPath);
+}
 
 // Configuración Cloudinary
 cloudinary.config({
@@ -29,61 +31,79 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configuración Multer para archivos temporales
+// Configuración Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
 const upload = multer({ storage });
 
-// Endpoint para subir PDF
+// Función para contar páginas PDF
+const contarPaginas = async (filePath, extension) => {
+  if (extension === '.pdf') {
+    const buffer = fs.readFileSync(filePath);
+    const data = await pdfParse(buffer);
+    return data.numpages;
+  }
+  return 1; // Estimación básica para otros formatos
+};
+
+// Endpoint principal
 app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName } = req.body;
+  const file = req.file;
 
-  if (!req.file || !paperType) {
+  if (!file || !paperType) {
     return res.status(400).json({ message: 'Faltan datos: archivo o tipo de papel.' });
   }
 
-  // Verificar que sea PDF
-  if (req.file.mimetype !== 'application/pdf') {
-    fs.unlinkSync(req.file.path); // eliminar temporal
-    return res.status(400).json({ message: 'Solo se permiten archivos PDF.' });
-  }
+  const filePath = file.path;
+  const ext = path.extname(file.originalname).toLowerCase();
 
   try {
-    // Leer PDF y contar páginas
-    const dataBuffer = fs.readFileSync(req.file.path);
-    const pdfData = await pdfParse(dataBuffer);
-    const totalPages = pdfData.numpages;
+    // Contar páginas
+    const totalPaginas = await contarPaginas(filePath, ext);
+
+    // Generar nombre único
+    const cleanName = (clientName || 'cliente')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^\w\-]/g, '');
+    const uniqueName = `${cleanName}-${uuidv4()}`;
+    const timestamp = Date.now();
+    const publicId = `${uniqueName}-${paperType}-${timestamp}`;
 
     // Subir a Cloudinary
-    const result = await cloudinary.uploader.upload(req.file.path, {
+    const result = await cloudinary.uploader.upload(filePath, {
       resource_type: 'auto',
       folder: 'pedidos',
-      public_id: `${Date.now()}-${paperType}`,
+      public_id: publicId,
+      use_filename: false,
+      unique_filename: false,
+      overwrite: true,
     });
 
-    // Borrar archivo temporal
-    fs.unlinkSync(req.file.path);
+    // Eliminar archivo temporal
+    fs.unlinkSync(filePath);
 
-    // Enviar respuesta al frontend
-    res.json({
-      message: 'Pedido recibido correctamente',
-      totalPages: totalPages,
-      archivoURL: result.secure_url,
-    });
+    // Armar respuesta
+    const pedido = {
+      archivo: result.secure_url,
+      tipoPapel: paperType,
+      cliente: clientName || 'Sin nombre',
+      nombreArchivo: result.public_id,
+      paginas: totalPaginas,
+    };
 
+    console.log('📦 Pedido recibido:', pedido);
+    res.json({ message: 'Pedido recibido correctamente', pedido });
   } catch (error) {
-    console.error('Error al procesar el PDF:', error);
-    fs.unlinkSync(req.file.path); // borrar temporal si hubo error
+    console.error('❌ Error al procesar el archivo:', error);
     res.status(500).json({ message: 'Error al procesar el archivo.' });
   }
 });
 
-// Endpoint de prueba
-app.get("/ping", (req, res) => res.send("pong"));
-
-// Levantar servidor
+// Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
 });
