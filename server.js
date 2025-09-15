@@ -12,7 +12,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS: solo permitir tu frontend
+// CORS: permitir solo tu frontend
 app.use(cors({
   origin: "https://impresionesatucasa.vercel.app",
   methods: ["POST"]
@@ -45,7 +45,7 @@ const contarPaginas = async (filePath, extension) => {
     const data = await pdfParse(buffer);
     return data.numpages;
   }
-  return 1; // Estimación básica para otros formatos
+  return 1;
 };
 
 // Endpoint principal
@@ -61,10 +61,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
   try {
-    // Contar páginas
     const totalPaginas = await contarPaginas(filePath, ext);
 
-    // Generar nombre único
     const cleanName = (clientName || 'cliente')
       .trim()
       .replace(/\s+/g, '_')
@@ -73,7 +71,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
     const timestamp = Date.now();
     const publicId = `${uniqueName}-${paperType}-${timestamp}`;
 
-    // Subir a Cloudinary
     const result = await cloudinary.uploader.upload(filePath, {
       resource_type: 'auto',
       folder: 'pedidos',
@@ -83,10 +80,8 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       overwrite: true,
     });
 
-    // Eliminar archivo temporal
     fs.unlinkSync(filePath);
 
-    // Armar respuesta
     const pedido = {
       archivo: result.secure_url,
       tipoPapel: paperType,
