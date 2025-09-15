@@ -36,7 +36,10 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+});
 
 // Función para contar páginas PDF
 const contarPaginas = async (filePath, extension) => {
@@ -80,7 +83,9 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       overwrite: true,
     });
 
-    fs.unlinkSync(filePath);
+    fs.unlink(filePath, (err) => {
+      if (err) console.warn('⚠️ No se pudo borrar el archivo temporal:', err);
+    });
 
     const pedido = {
       archivo: result.secure_url,
