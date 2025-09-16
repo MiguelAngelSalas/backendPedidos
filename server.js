@@ -114,4 +114,3 @@ app.post('/upload', upload.single('file'), async (req, res) => {
 // Iniciar servidor
 app.listen(PORT, () => {
   console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
-});
