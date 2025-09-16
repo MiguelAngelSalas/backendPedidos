@@ -59,9 +59,10 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
 
+  // Validaciones detalladas
   if (!file) return res.status(400).json({ message: 'Falta el archivo PDF.' });
-  if (!paperType) return res.status(400).json({ message: 'Falta el tipo de papel.' });
-  if (!telefonoCliente) return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
+  if (!paperType || typeof paperType !== 'string') return res.status(400).json({ message: 'Falta el tipo de papel.' });
+  if (!telefonoCliente || typeof telefonoCliente !== 'string') return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
 
   const filePath = file.path;
   const ext = path.extname(file.originalname).toLowerCase();
@@ -74,7 +75,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       .replace(/\s+/g, '_')
       .replace(/[^\w\-]/g, '');
 
-    const cleanPhone = (telefonoCliente || 'sin_telefono')
+    const cleanPhone = telefonoCliente
       .trim()
       .replace(/\s+/g, '_')
       .replace(/[^\w\-]/g, '');
@@ -101,7 +102,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       archivo: result.secure_url,
       tipoPapel: paperType,
       cliente: clientName || 'Sin nombre',
-      telefono: telefonoCliente || 'Sin teléfono',
+      telefono: telefonoCliente,
       nombreArchivo: result.public_id,
       paginas: totalPaginas,
     };
