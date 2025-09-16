@@ -53,12 +53,15 @@ const contarPaginas = async (filePath, extension) => {
 
 // Endpoint principal
 app.post('/upload', upload.single('file'), async (req, res) => {
+  console.log("📥 req.body:", req.body);
+  console.log("📎 req.file:", req.file);
+
   const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
 
-  if (!file || !paperType || !telefonoCliente) {
-    return res.status(400).json({ message: 'Faltan datos: archivo, tipo de papel o teléfono.' });
-  }
+  if (!file) return res.status(400).json({ message: 'Falta el archivo PDF.' });
+  if (!paperType) return res.status(400).json({ message: 'Falta el tipo de papel.' });
+  if (!telefonoCliente) return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
 
   const filePath = file.path;
   const ext = path.extname(file.originalname).toLowerCase();
