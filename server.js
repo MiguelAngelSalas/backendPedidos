@@ -53,24 +53,30 @@ const contarPaginas = async (filePath, extension) => {
 
 // Endpoint principal
 app.post('/upload', upload.single('file'), async (req, res) => {
-  const { paperType, clientName } = req.body;
+  const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
 
-  if (!file || !paperType) {
-    return res.status(400).json({ message: 'Faltan datos: archivo o tipo de papel.' });
+  if (!file || !paperType || !telefonoCliente) {
+    return res.status(400).json({ message: 'Faltan datos: archivo, tipo de papel o teléfono.' });
   }
 
   const filePath = file.path;
   const ext = path.extname(file.originalname).toLowerCase();
 
   try {
-    const totalPaginas = await contarPaginas(filePath, ext);
+    const totalPaginas = paginas || await contarPaginas(filePath, ext);
 
     const cleanName = (clientName || 'cliente')
       .trim()
       .replace(/\s+/g, '_')
       .replace(/[^\w\-]/g, '');
-    const uniqueName = `${cleanName}-${uuidv4()}`;
+
+    const cleanPhone = (telefonoCliente || 'sin_telefono')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^\w\-]/g, '');
+
+    const uniqueName = `${cleanName}-${cleanPhone}-${uuidv4()}`;
     const timestamp = Date.now();
     const publicId = `${uniqueName}-${paperType}-${timestamp}`;
 
@@ -78,6 +84,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       resource_type: 'auto',
       folder: 'pedidos',
       public_id: publicId,
+      context: `telefono=${telefonoCliente}`,
       use_filename: false,
       unique_filename: false,
       overwrite: true,
@@ -91,6 +98,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       archivo: result.secure_url,
       tipoPapel: paperType,
       cliente: clientName || 'Sin nombre',
+      telefono: telefonoCliente || 'Sin teléfono',
       nombreArchivo: result.public_id,
       paginas: totalPaginas,
     };
