@@ -1,3 +1,5 @@
+// backend/index.js
+
 const express = require('express');
 const multer = require('multer');
 const cors = require('cors');
@@ -12,43 +14,35 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ✅ CORS: permitir frontend local y producción
-app.use((req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
-    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type");
-    return res.sendStatus(200);
-  }
-  next();
-});
+// ✅ Middleware CORS
+app.use(cors({
+  origin: ['http://localhost:3000', 'https://impresionesatucasa.com.ar'], // agrega tu dominio de producción
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
 
-
-// ✅ Manejar preflight requests explícitamente
-app.options('*', cors());
-
-// Middleware para JSON
+// ✅ Middleware JSON
 app.use(express.json());
 
-// ✅ Endpoint de prueba para verificar conexión
+// ✅ Endpoint de prueba
 app.get("/", (req, res) => {
   res.send("🟢 Backend funcionando correctamente");
 });
 
-// Crear carpeta temporal si no existe
+// ✅ Crear carpeta temporal
 const tempPath = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath);
 }
 
-// Configuración Cloudinary
+// ✅ Configurar Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configuración Multer
+// ✅ Configurar Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
@@ -58,33 +52,27 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 });
 
-// Función para contar páginas PDF
-const contarPaginas = async (filePath, extension) => {
-  if (extension === '.pdf') {
-    const buffer = fs.readFileSync(filePath);
-    const data = await pdfParse(buffer);
-    return data.numpages;
-  }
-  return 1;
+// ✅ Función para contar páginas PDF
+const contarPaginas = async (filePath) => {
+  const buffer = fs.readFileSync(filePath);
+  const data = await pdfParse(buffer);
+  return data.numpages;
 };
 
-// ✅ Endpoint para subir archivo PDF
+// ✅ Endpoint para subir un solo archivo PDF
 app.post('/upload', upload.single('file'), async (req, res) => {
-  console.log("📥 req.body:", req.body);
-  console.log("📎 req.file:", req.file);
-
   const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
 
   if (!file) return res.status(400).json({ message: 'Falta el archivo PDF.' });
-  if (!paperType || typeof paperType !== 'string') return res.status(400).json({ message: 'Falta el tipo de papel.' });
-  if (!telefonoCliente || typeof telefonoCliente !== 'string') return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
+  if (!paperType) return res.status(400).json({ message: 'Falta el tipo de papel.' });
+  if (!telefonoCliente) return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
 
   const filePath = file.path;
   const ext = path.extname(file.originalname).toLowerCase();
 
   try {
-    const totalPaginas = paginas || await contarPaginas(filePath, ext);
+    const totalPaginas = paginas || await contarPaginas(filePath);
 
     const cleanName = (clientName || 'cliente')
       .trim()
@@ -110,6 +98,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       overwrite: true,
     });
 
+    // Borrar archivo temporal
     fs.unlink(filePath, (err) => {
       if (err) console.warn('⚠️ No se pudo borrar el archivo temporal:', err);
     });
@@ -123,15 +112,16 @@ app.post('/upload', upload.single('file'), async (req, res) => {
       paginas: totalPaginas,
     };
 
-    console.log('📦 Pedido recibido:', pedido);
-    res.json({ message: 'Pedido recibido correctamente', pedido });
+    console.log('📦 Pedido individual recibido:', pedido);
+    res.json({ mensaje: 'Pedido recibido correctamente', pedido });
+
   } catch (error) {
     console.error('❌ Error al procesar el archivo:', error);
-    res.status(500).json({ message: 'Error al procesar el archivo.' });
+    res.status(500).json({ mensaje: 'Error al procesar el archivo.' });
   }
 });
 
-// ✅ Endpoint para recibir el carrito completo
+// ✅ Endpoint para recibir un carrito completo
 app.post('/api/pedidos', async (req, res) => {
   const { cliente, items, total, fecha } = req.body;
 
@@ -148,15 +138,19 @@ app.post('/api/pedidos', async (req, res) => {
       fecha: fecha || new Date().toISOString(),
     };
 
-    console.log("📦 Pedido completo recibido:", resumen);
+    console.log("🛒 Pedido completo recibido:", resumen);
+
+    // Si usás base de datos, acá podrías guardarlo
+
     res.json({ message: 'Pedido completo recibido correctamente ✅', resumen });
+
   } catch (error) {
     console.error("❌ Error al guardar pedido:", error);
     res.status(500).json({ message: 'Error al guardar el pedido.' });
   }
 });
 
-// Iniciar servidor
+// ✅ Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor Express corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
 });
