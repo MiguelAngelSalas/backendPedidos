@@ -14,35 +14,35 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware CORS - para desarrollo usar * (luego restringir)
+// ✅ Middleware CORS (ajustá dominios si necesitás)
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://impresionesatucasa.com.ar', '*'], 
+  origin: ['http://localhost:3000', 'https://impresionesatucasa.com.ar'],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
 }));
 
-// Middleware JSON
+// ✅ Middleware JSON
 app.use(express.json());
 
-// Endpoint prueba
+// ✅ Endpoint de prueba
 app.get("/", (req, res) => {
   res.send("🟢 Backend funcionando correctamente");
 });
 
-// Crear carpeta temporal
+// ✅ Crear carpeta temporal si no existe
 const tempPath = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath);
 }
 
-// Configurar Cloudinary
+// ✅ Configurar Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configurar Multer
+// ✅ Configurar Multer para subir archivos
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
@@ -52,14 +52,14 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 });
 
-// Función para contar páginas PDF
+// ✅ Contar páginas PDF
 const contarPaginas = async (filePath) => {
   const buffer = fs.readFileSync(filePath);
   const data = await pdfParse(buffer);
   return data.numpages;
 };
 
-// Endpoint para subir un solo archivo PDF
+// ✅ Endpoint: subir archivo individual
 app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
@@ -69,20 +69,15 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   if (!telefonoCliente) return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
 
   const filePath = file.path;
-  const ext = path.extname(file.originalname).toLowerCase();
 
   try {
     const totalPaginas = paginas || await contarPaginas(filePath);
 
     const cleanName = (clientName || 'cliente')
-      .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[^\w\-]/g, '');
+      .trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
 
     const cleanPhone = telefonoCliente
-      .trim()
-      .replace(/\s+/g, '_')
-      .replace(/[^\w\-]/g, '');
+      .trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
 
     const uniqueName = `${cleanName}-${cleanPhone}-${uuidv4()}`;
     const timestamp = Date.now();
@@ -121,9 +116,11 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// Endpoint para recibir un carrito completo
+// ✅ Endpoint: recibir carrito completo
 app.post('/api/pedidos', async (req, res) => {
   const { cliente, items, total, fecha } = req.body;
+
+  console.log("📥 Pedido recibido:", req.body); // log completo del pedido recibido
 
   if (!cliente || !items || !Array.isArray(items)) {
     return res.status(400).json({ message: 'Faltan datos del pedido.' });
@@ -140,17 +137,16 @@ app.post('/api/pedidos', async (req, res) => {
 
     console.log("🛒 Pedido completo recibido:", resumen);
 
-    // Aquí podrías guardar en DB si querés
+    // Aquí podrías guardar en una base de datos si tenés una
 
-    res.json({ message: 'Pedido completo recibido correctamente ✅', resumen });
-
+    res.json({ mensaje: 'Pedido completo recibido correctamente ✅', pedido: resumen });
   } catch (error) {
     console.error("❌ Error al guardar pedido:", error);
     res.status(500).json({ message: 'Error al guardar el pedido.' });
   }
 });
 
-// Iniciar servidor
+// ✅ Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
+  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
 });
