@@ -12,7 +12,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// CORS: permitir solo tu frontend
+// ✅ CORS: permitir frontend local y producción
 app.use(cors({
   origin: [
     "https://impresionesatucasa.vercel.app",
@@ -23,9 +23,16 @@ app.use(cors({
   allowedHeaders: ["Content-Type"]
 }));
 
+// ✅ Manejar preflight requests explícitamente
+app.options('*', cors());
 
 // Middleware para JSON
 app.use(express.json());
+
+// ✅ Endpoint de prueba para verificar conexión
+app.get("/", (req, res) => {
+  res.send("🟢 Backend funcionando correctamente");
+});
 
 // Crear carpeta temporal si no existe
 const tempPath = path.join(__dirname, 'temp');
@@ -123,7 +130,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// ✅ Nuevo endpoint para recibir el carrito completo
+// ✅ Endpoint para recibir el carrito completo
 app.post('/api/pedidos', async (req, res) => {
   const { cliente, items, total, fecha } = req.body;
 
