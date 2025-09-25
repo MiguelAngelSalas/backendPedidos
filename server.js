@@ -18,6 +18,9 @@ app.use(cors({
   methods: ["POST"]
 }));
 
+// Middleware para JSON
+app.use(express.json());
+
 // Crear carpeta temporal si no existe
 const tempPath = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempPath)) {
@@ -51,7 +54,7 @@ const contarPaginas = async (filePath, extension) => {
   return 1;
 };
 
-// Endpoint principal
+// ✅ Endpoint para subir archivo PDF
 app.post('/upload', upload.single('file'), async (req, res) => {
   console.log("📥 req.body:", req.body);
   console.log("📎 req.file:", req.file);
@@ -59,7 +62,6 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
 
-  // Validaciones detalladas
   if (!file) return res.status(400).json({ message: 'Falta el archivo PDF.' });
   if (!paperType || typeof paperType !== 'string') return res.status(400).json({ message: 'Falta el tipo de papel.' });
   if (!telefonoCliente || typeof telefonoCliente !== 'string') return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
@@ -112,6 +114,31 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   } catch (error) {
     console.error('❌ Error al procesar el archivo:', error);
     res.status(500).json({ message: 'Error al procesar el archivo.' });
+  }
+});
+
+// ✅ Nuevo endpoint para recibir el carrito completo
+app.post('/api/pedidos', async (req, res) => {
+  const { cliente, items, total, fecha } = req.body;
+
+  if (!cliente || !items || !Array.isArray(items)) {
+    return res.status(400).json({ message: 'Faltan datos del pedido.' });
+  }
+
+  try {
+    const resumen = {
+      id: uuidv4(),
+      cliente,
+      items,
+      total,
+      fecha: fecha || new Date().toISOString(),
+    };
+
+    console.log("📦 Pedido completo recibido:", resumen);
+    res.json({ message: 'Pedido completo recibido correctamente ✅', resumen });
+  } catch (error) {
+    console.error("❌ Error al guardar pedido:", error);
+    res.status(500).json({ message: 'Error al guardar el pedido.' });
   }
 });
 
