@@ -14,9 +14,14 @@ const PORT = process.env.PORT || 3001;
 
 // CORS: permitir solo tu frontend
 app.use(cors({
-  origin: "https://impresionesatucasa.vercel.app",
-  methods: ["POST"]
+  origin: [
+    "https://impresionesatucasa.vercel.app",
+    "https://impresionesatucasa.com.ar",
+    "http://localhost:5173"
+  ],
+  methods: ["POST", "OPTIONS"]
 }));
+
 
 // Middleware para JSON
 app.use(express.json());
