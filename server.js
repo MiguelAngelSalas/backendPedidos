@@ -13,15 +13,16 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // ✅ CORS: permitir frontend local y producción
-app.use(cors({
-  origin: [
-    "https://impresionesatucasa.vercel.app",
-    "https://impresionesatucasa.com.ar",
-    "http://localhost:5173"
-  ],
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"]
-}));
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 
 // ✅ Manejar preflight requests explícitamente
 app.options('*', cors());
