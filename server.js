@@ -14,35 +14,35 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// ✅ Middleware CORS
+// Middleware CORS - para desarrollo usar * (luego restringir)
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://impresionesatucasa.com.ar'], // agrega tu dominio de producción
+  origin: ['http://localhost:3000', 'https://impresionesatucasa.com.ar', '*'], 
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type'],
 }));
 
-// ✅ Middleware JSON
+// Middleware JSON
 app.use(express.json());
 
-// ✅ Endpoint de prueba
+// Endpoint prueba
 app.get("/", (req, res) => {
   res.send("🟢 Backend funcionando correctamente");
 });
 
-// ✅ Crear carpeta temporal
+// Crear carpeta temporal
 const tempPath = path.join(__dirname, 'temp');
 if (!fs.existsSync(tempPath)) {
   fs.mkdirSync(tempPath);
 }
 
-// ✅ Configurar Cloudinary
+// Configurar Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ✅ Configurar Multer
+// Configurar Multer
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, 'temp/'),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
@@ -52,14 +52,14 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
 });
 
-// ✅ Función para contar páginas PDF
+// Función para contar páginas PDF
 const contarPaginas = async (filePath) => {
   const buffer = fs.readFileSync(filePath);
   const data = await pdfParse(buffer);
   return data.numpages;
 };
 
-// ✅ Endpoint para subir un solo archivo PDF
+// Endpoint para subir un solo archivo PDF
 app.post('/upload', upload.single('file'), async (req, res) => {
   const { paperType, clientName, telefonoCliente, paginas } = req.body;
   const file = req.file;
@@ -121,7 +121,7 @@ app.post('/upload', upload.single('file'), async (req, res) => {
   }
 });
 
-// ✅ Endpoint para recibir un carrito completo
+// Endpoint para recibir un carrito completo
 app.post('/api/pedidos', async (req, res) => {
   const { cliente, items, total, fecha } = req.body;
 
@@ -140,7 +140,7 @@ app.post('/api/pedidos', async (req, res) => {
 
     console.log("🛒 Pedido completo recibido:", resumen);
 
-    // Si usás base de datos, acá podrías guardarlo
+    // Aquí podrías guardar en DB si querés
 
     res.json({ message: 'Pedido completo recibido correctamente ✅', resumen });
 
@@ -150,7 +150,7 @@ app.post('/api/pedidos', async (req, res) => {
   }
 });
 
-// ✅ Iniciar servidor
+// Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Servidor corriendo en el puerto ${PORT}`);
 });
