@@ -19,7 +19,8 @@ app.use(cors({
     "https://impresionesatucasa.com.ar",
     "http://localhost:5173"
   ],
-  methods: ["POST", "OPTIONS"]
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
 }));
 
 
