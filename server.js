@@ -1,152 +1,136 @@
-// backend/index.js
-
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const { v2: cloudinary } = require('cloudinary');
-const fs = require('fs');
-const path = require('path');
-const { v4: uuidv4 } = require('uuid');
-const pdfParse = require('pdf-parse');
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const multer = require("multer");
+const cloudinary = require("cloudinary").v2;
+const { Readable } = require("stream");
+const path = require("path");
+const crypto = require("crypto");
 
 dotenv.config();
-const app = express();
-const PORT = process.env.PORT || 3001;
 
-// ✅ Middleware CORS (ajustá dominios si necesitás)
-app.use(cors({
-  origin: ['http://localhost:3000', 'https://impresionesatucasa.com.ar'],
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type'],
-}));
-
-// ✅ Middleware JSON
-app.use(express.json());
-
-// ✅ Endpoint de prueba
-app.get("/", (req, res) => {
-  res.send("🟢 Backend funcionando correctamente");
-});
-
-// ✅ Crear carpeta temporal si no existe
-const tempPath = path.join(__dirname, 'temp');
-if (!fs.existsSync(tempPath)) {
-  fs.mkdirSync(tempPath);
-}
-
-// ✅ Configurar Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// ✅ Configurar Multer para subir archivos
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, 'temp/'),
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + file.originalname),
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
-});
+const app = express();
+const PORT = process.env.PORT || 3001;
 
-// ✅ Contar páginas PDF
-const contarPaginas = async (filePath) => {
-  const buffer = fs.readFileSync(filePath);
-  const data = await pdfParse(buffer);
-  return data.numpages;
-};
+app.use(cors({ origin: true }));
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true }));
 
-// ✅ Endpoint: subir archivo individual
-app.post('/upload', upload.single('file'), async (req, res) => {
-  const { paperType, clientName, telefonoCliente, paginas } = req.body;
-  const file = req.file;
+const upload = multer({ storage: multer.memoryStorage() });
 
-  if (!file) return res.status(400).json({ message: 'Falta el archivo PDF.' });
-  if (!paperType) return res.status(400).json({ message: 'Falta el tipo de papel.' });
-  if (!telefonoCliente) return res.status(400).json({ message: 'Falta el teléfono del cliente.' });
-
-  const filePath = file.path;
-
+app.post("/api/pedidos", upload.any(), async (req, res) => {
   try {
-    const totalPaginas = paginas || await contarPaginas(filePath);
+    console.log("===== Datos recibidos en /api/pedidos =====");
+    console.log("req.body:", req.body);
+    console.log("req.files:", req.files);
 
-    const cleanName = (clientName || 'cliente')
-      .trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No se enviaron archivos" });
+    }
 
-    const cleanPhone = telefonoCliente
-      .trim().replace(/\s+/g, '_').replace(/[^\w\-]/g, '');
+    const { cliente, telefono } = req.body;
+    let tiposPapel = [];
 
-    const uniqueName = `${cleanName}-${cleanPhone}-${uuidv4()}`;
-    const timestamp = Date.now();
-    const publicId = `${uniqueName}-${paperType}-${timestamp}`;
+    try {
+      const pedido = JSON.parse(req.body.pedido);
+      tiposPapel = pedido.items
+        .filter((item) => item.detalles?.tipo === "impresion")
+        .map((item) => item.detalles.papel);
+    } catch (err) {
+      return res.status(400).json({ error: "Pedido mal formado" });
+    }
 
-    const result = await cloudinary.uploader.upload(filePath, {
-      resource_type: 'auto',
-      folder: 'pedidos',
-      public_id: publicId,
-      context: `telefono=${telefonoCliente}`,
-      use_filename: false,
-      unique_filename: false,
-      overwrite: true,
+    if (!cliente || !telefono) {
+      return res.status(400).json({ error: "Faltan datos del cliente" });
+    }
+
+    if (typeof tiposPapel === "string") {
+      tiposPapel = [tiposPapel];
+    }
+
+    if (!Array.isArray(tiposPapel)) {
+      return res.status(400).json({ error: "Tipos de papel inválidos" });
+    }
+
+    if (tiposPapel.length !== req.files.length) {
+      return res
+        .status(400)
+        .json({ error: "Cantidad de tipos de papel no coincide con archivos" });
+    }
+
+    const clienteNombre = cliente.trim().replace(/\s+/g, "_");
+    const clienteTelefono = telefono.trim().replace(/\s+/g, "_");
+    const fechaPedido = Date.now();
+    const carpetaPedido = `pedidos/${clienteNombre}_${clienteTelefono}_${fechaPedido}`;
+
+    const archivosSubidos = await Promise.all(
+      req.files.map((file, idx) => {
+        const tipoPapel = tiposPapel[idx] || "desconocido";
+
+        if (file.mimetype !== "application/pdf") {
+          throw new Error(`Archivo no permitido: ${file.originalname}`);
+        }
+
+        if (!file.buffer || file.buffer.length === 0) {
+          throw new Error(`Archivo vacío: ${file.originalname}`);
+        }
+
+        const uuid = crypto.randomUUID();
+        const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
+
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              resource_type: "raw",
+              folder: carpetaPedido,
+              public_id: nombreArchivoBase,
+              use_filename: false,
+              unique_filename: true,
+            },
+            (err, result) => {
+              if (err) {
+                console.error("❌ Error subiendo archivo:", err);
+                return reject(err);
+              }
+              console.log(`📄 Subido: ${file.originalname} como ${tipoPapel}`);
+              resolve({
+                originalname: file.originalname,
+                nombreSubido: result.public_id,
+                secure_url: result.secure_url,
+                public_id: result.public_id,
+                format: result.format,
+              });
+            }
+          );
+
+          const readable = new Readable();
+          readable._read = () => {};
+          readable.push(file.buffer);
+          readable.push(null);
+          readable.pipe(uploadStream);
+        });
+      })
+    );
+
+    return res.json({
+      mensaje: "✅ Pedido recibido y archivos subidos correctamente",
+      cliente: clienteNombre,
+      telefono: clienteTelefono,
+      carpeta: carpetaPedido,
+      archivos: archivosSubidos,
     });
-
-    // Borrar archivo temporal
-    fs.unlink(filePath, (err) => {
-      if (err) console.warn('⚠️ No se pudo borrar el archivo temporal:', err);
-    });
-
-    const pedido = {
-      archivo: result.secure_url,
-      tipoPapel: paperType,
-      cliente: clientName || 'Sin nombre',
-      telefono: telefonoCliente,
-      nombreArchivo: result.public_id,
-      paginas: totalPaginas,
-    };
-
-    console.log('📦 Pedido individual recibido:', pedido);
-    res.json({ mensaje: 'Pedido recibido correctamente', pedido });
-
-  } catch (error) {
-    console.error('❌ Error al procesar el archivo:', error);
-    res.status(500).json({ mensaje: 'Error al procesar el archivo.' });
+  } catch (err) {
+    console.error("❌ Error en /api/pedidos:", err);
+    return res.status(500).json({ error: "Error procesando pedido" });
   }
 });
 
-// ✅ Endpoint: recibir carrito completo
-app.post('/api/pedidos', async (req, res) => {
-  const { cliente, items, total, fecha } = req.body;
-
-  console.log("📥 Pedido recibido:", req.body); // log completo del pedido recibido
-
-  if (!cliente || !items || !Array.isArray(items)) {
-    return res.status(400).json({ message: 'Faltan datos del pedido.' });
-  }
-
-  try {
-    const resumen = {
-      id: uuidv4(),
-      cliente,
-      items,
-      total,
-      fecha: fecha || new Date().toISOString(),
-    };
-
-    console.log("🛒 Pedido completo recibido:", resumen);
-
-    // Aquí podrías guardar en una base de datos si tenés una
-
-    res.json({ mensaje: 'Pedido completo recibido correctamente ✅', pedido: resumen });
-  } catch (error) {
-    console.error("❌ Error al guardar pedido:", error);
-    res.status(500).json({ message: 'Error al guardar el pedido.' });
-  }
-});
-
-// ✅ Iniciar servidor
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
