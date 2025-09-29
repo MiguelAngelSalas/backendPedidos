@@ -18,7 +18,10 @@ cloudinary.config({
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors({ origin: true }));
+app.use(cors({
+  origin: "https://impresionesatucasa.com.ar",
+  credentials: true,
+}));
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
