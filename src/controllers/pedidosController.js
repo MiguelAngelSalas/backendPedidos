@@ -1,7 +1,7 @@
 const multer = require("multer");
 const { Readable } = require("stream");
 const crypto = require("crypto");
-const cloudinary = require("../utils/cloudinary");
+const cloudinary = require("../utilidades/cloudinary");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
