@@ -137,6 +137,11 @@ app.post("/api/pedidos", upload.any(), async (req, res) => {
   }
 });
 
+app.get("/", (req, res) => {
+  res.send("🚀 Backend funcionando correctamente");
+});
+
+
 app.listen(PORT,"0.0.0.0", () => {
   console.log(`🚀 Backend listo. Railway lo expone públicamente en su dominio.`);
 });
