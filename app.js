@@ -9,6 +9,7 @@ app.use(cors({
   origin: 'https://impresionesatucasa.com.ar',
   credentials: true
 }));
+app.options('*', cors());
 
 
 app.use(express.json({ limit: "20mb" }));
@@ -26,4 +27,5 @@ app.get("/", (req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
+
 
