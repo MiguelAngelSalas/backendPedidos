@@ -5,10 +5,23 @@ const errorHandler = require("./src/middlewares/errorHandler");
 
 const app = express();
 
+const allowedOrigins = [
+  'https://impresionesatucasa.com.ar',
+  'http://localhost:5173'
+];
+
 app.use(cors({
-  origin: 'https://impresionesatucasa.com.ar',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS bloqueado para este origen"));
+    }
+  },
   credentials: true
 }));
+
+
 app.options('*', cors());
 
 
