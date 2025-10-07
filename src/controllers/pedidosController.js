@@ -50,36 +50,37 @@ const crearPedido = async (req, res, next) => {
     const fechaPedido = Date.now();
     const carpetaPedido = `pedidos/${clienteNombre}_${clienteTelefono}_${fechaPedido}`;
 
-    const archivosSubidos = await Promise.all(
-      req.files.map(async (file, idx) => {
-        const tipoPapel = tiposPapel[idx] || "desconocido";
+    const archivosSubidos = [];
 
-        if (file.mimetype !== "application/pdf") {
-          throw new Error(`Archivo no permitido: ${file.originalname}`);
-        }
-        if (!file.buffer || file.buffer.length === 0) {
-          throw new Error(`Archivo vacío: ${file.originalname}`);
-        }
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      const tipoPapel = tiposPapel[i] || "desconocido";
 
-        const uuid = crypto.randomUUID();
-        const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
+      if (file.mimetype !== "application/pdf") {
+        throw new Error(`Archivo no permitido: ${file.originalname}`);
+      }
+      if (!file.buffer || file.buffer.length === 0) {
+        throw new Error(`Archivo vacío: ${file.originalname}`);
+      }
 
-        const result = await cloudinary.uploader.upload(file.buffer, {
-          resource_type: "raw",
-          folder: carpetaPedido,
-          public_id: nombreArchivoBase,
-          use_filename: false,
-          unique_filename: true,
-        });
+      const uuid = crypto.randomUUID();
+      const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
 
-        return {
-          originalname: file.originalname,
-          nombreSubido: result.public_id,
-          secure_url: result.secure_url,
-          format: result.format,
-        };
-      })
-    );
+      const result = await cloudinary.uploader.upload(file.buffer, {
+        resource_type: "raw",
+        folder: carpetaPedido,
+        public_id: nombreArchivoBase,
+        use_filename: false,
+        unique_filename: true,
+      });
+
+      archivosSubidos.push({
+        originalname: file.originalname,
+        nombreSubido: result.public_id,
+        secure_url: result.secure_url,
+        format: result.format,
+      });
+    }
 
     res.json({
       mensaje: "✅ Pedido recibido y archivos subidos correctamente",
@@ -89,7 +90,8 @@ const crearPedido = async (req, res, next) => {
       archivos: archivosSubidos,
     });
   } catch (err) {
-    next(err);
+    console.error("❌ Error interno en crearPedido:", err);
+    res.status(500).json({ error: "Error procesando la solicitud" });
   }
 };
 
