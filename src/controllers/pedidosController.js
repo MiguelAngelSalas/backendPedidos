@@ -1,4 +1,5 @@
 const multer = require("multer");
+const { Readable } = require("stream");
 const crypto = require("crypto");
 const cloudinary = require("../utilidades/cloudinary");
 
@@ -50,37 +51,48 @@ const crearPedido = async (req, res, next) => {
     const fechaPedido = Date.now();
     const carpetaPedido = `pedidos/${clienteNombre}_${clienteTelefono}_${fechaPedido}`;
 
-    const archivosSubidos = [];
+    const archivosSubidos = await Promise.all(
+      req.files.map((file, idx) => {
+        const tipoPapel = tiposPapel[idx] || "desconocido";
 
-    for (let i = 0; i < req.files.length; i++) {
-      const file = req.files[i];
-      const tipoPapel = tiposPapel[i] || "desconocido";
+        if (file.mimetype !== "application/pdf") {
+          throw new Error(`Archivo no permitido: ${file.originalname}`);
+        }
+        if (!file.buffer || file.buffer.length === 0) {
+          throw new Error(`Archivo vacío: ${file.originalname}`);
+        }
 
-      if (file.mimetype !== "application/pdf") {
-        throw new Error(`Archivo no permitido: ${file.originalname}`);
-      }
-      if (!file.buffer || file.buffer.length === 0) {
-        throw new Error(`Archivo vacío: ${file.originalname}`);
-      }
+        const uuid = crypto.randomUUID();
+        const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
 
-      const uuid = crypto.randomUUID();
-      const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              resource_type: "raw",
+              folder: carpetaPedido,
+              public_id: nombreArchivoBase,
+              use_filename: false,
+              unique_filename: true,
+            },
+            (err, result) => {
+              if (err) return reject(err);
+              resolve({
+                originalname: file.originalname,
+                nombreSubido: result.public_id,
+                secure_url: result.secure_url,
+                format: result.format,
+              });
+            }
+          );
 
-      const result = await cloudinary.uploader.upload(file.buffer, {
-        resource_type: "raw",
-        folder: carpetaPedido,
-        public_id: nombreArchivoBase,
-        use_filename: false,
-        unique_filename: true,
-      });
-
-      archivosSubidos.push({
-        originalname: file.originalname,
-        nombreSubido: result.public_id,
-        secure_url: result.secure_url,
-        format: result.format,
-      });
-    }
+          const readable = new Readable();
+          readable._read = () => {};
+          readable.push(file.buffer);
+          readable.push(null);
+          readable.pipe(uploadStream);
+        });
+      })
+    );
 
     res.json({
       mensaje: "✅ Pedido recibido y archivos subidos correctamente",
@@ -90,8 +102,7 @@ const crearPedido = async (req, res, next) => {
       archivos: archivosSubidos,
     });
   } catch (err) {
-    console.error("❌ Error interno en crearPedido:", err);
-    res.status(500).json({ error: "Error procesando la solicitud" });
+    next(err);
   }
 };
 
