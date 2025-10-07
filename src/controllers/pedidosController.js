@@ -2,7 +2,6 @@ const multer = require("multer");
 const { Readable } = require("stream");
 const crypto = require("crypto");
 const cloudinary = require("../utilidades/cloudinary");
-const axios = require("axios"); // agregado para enviar la notificación
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -95,18 +94,6 @@ const crearPedido = async (req, res, next) => {
       })
     );
 
-    // 🔔 Notificación por Telegram
-    try {
-      const mensajeTelegram = `📁 *Pedido nuevo recibido*\n👤 Cliente: *${cliente}*\n📞 Teléfono: ${telefono}\n🗂 Carpeta: ${carpetaPedido}\n📄 Archivos subidos: ${archivosSubidos.length}`;
-      await axios.post(`https://api.telegram.org/bot8305608507:AAFmAuTEB2VObgP9WrGccEKLGyLoCBqe-IM/sendMessage`, {
-        chat_id: 7713272523,
-        text: mensajeTelegram,
-        parse_mode: "Markdown"
-      });
-    } catch (error) {
-      console.error("Error al enviar notificación Telegram:", error.message);
-    }
-
     res.json({
       mensaje: "✅ Pedido recibido y archivos subidos correctamente",
       cliente: clienteNombre,
@@ -120,4 +107,3 @@ const crearPedido = async (req, res, next) => {
 };
 
 module.exports = { crearPedido, upload };
-
