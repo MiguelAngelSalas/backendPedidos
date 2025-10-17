@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const pedidosRoutes = require("./src/routes/pedidos");
+const pedidosRouter = require("./src/router/pedidos");
 const errorHandler = require("./src/middlewares/errorHandler");
 
 const app = express();
@@ -29,7 +29,7 @@ app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // Rutas
-app.use("/api/pedidos", pedidosRoutes);
+app.use("/api/pedidos", pedidosRouter);
 
 // Ruta de prueba
 app.get("/", (req, res) => {
