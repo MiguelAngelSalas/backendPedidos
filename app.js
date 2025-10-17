@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require("cors");
-const pedidosRouter = require("./src/router/pedidos");
+const pedidosRouter = require("./router/pedidos");
 const errorHandler = require("./src/middlewares/errorHandler");
 
 const app = express();
