@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 const express = require("express");
 const cors = require("cors");
 const pedidosRouter = require("./router/pedidos");
@@ -41,51 +40,3 @@ app.get("/", (req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
-
-
-=======
-const express = require("express");
-const cors = require("cors");
-const pedidosRouter = require("./router/pedidos");
-const errorHandler = require("./middlewares/errorHandler");
-
-const app = express();
-
-const allowedOrigins = [
-  'https://impresionesatucasa.com.ar',
-  'http://localhost:5173'
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("CORS bloqueado para este origen"));
-    }
-  },
-  credentials: true
-}));
-
-
-app.options('*', cors());
-
-
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true }));
-
-// Rutas
-app.use("/api/pedidos", pedidosRouter);
-
-// Ruta de prueba
-app.get("/", (req, res) => {
-  res.send("🚀 Backend funcionando correctamente");
-});
-
-// Middleware de errores
-app.use(errorHandler);
-
-module.exports = app;
-
-
->>>>>>> 17811f0 (Fix: add root server.js and correct src/server require; update package.json)
