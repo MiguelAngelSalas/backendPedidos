@@ -1,10 +1,16 @@
 const multer = require("multer");
-const { Readable } = require("stream");
+const fs = require("fs");
+const { default: pLimit } = require("p-limit");
 const crypto = require("crypto");
+const { Readable } = require("stream");
 const cloudinary = require("../utilidades/cloudinary");
-const axios = require("axios"); // agregado para enviar la notificación
+const notificarTelegram = require("../utilidades/notifiTelegram");
 
-const upload = multer({ storage: multer.memoryStorage() });
+// Guardar temporalmente los archivos en disco
+const upload = multer({ dest: "uploads/" });
+
+// Limitar a 3 subidas simultáneas
+const limit = pLimit(3);
 
 const crearPedido = async (req, res, next) => {
   try {
@@ -36,7 +42,6 @@ const crearPedido = async (req, res, next) => {
     }
 
     if (typeof tiposPapel === "string") tiposPapel = [tiposPapel];
-
     if (!Array.isArray(tiposPapel)) {
       return res.status(400).json({ error: "Tipos de papel inválidos" });
     }
@@ -53,59 +58,54 @@ const crearPedido = async (req, res, next) => {
     const carpetaPedido = `pedidos/${clienteNombre}_${clienteTelefono}_${fechaPedido}`;
 
     const archivosSubidos = await Promise.all(
-      req.files.map((file, idx) => {
-        const tipoPapel = tiposPapel[idx] || "desconocido";
+      req.files.map((file, idx) =>
+        limit(
+          () =>
+            new Promise((resolve, reject) => {
+              const tipoPapel = tiposPapel[idx] || "desconocido";
 
-        if (file.mimetype !== "application/pdf") {
-          throw new Error(`Archivo no permitido: ${file.originalname}`);
-        }
-        if (!file.buffer || file.buffer.length === 0) {
-          throw new Error(`Archivo vacío: ${file.originalname}`);
-        }
+              if (file.mimetype !== "application/pdf") {
+                fs.unlink(file.path, () => {});
+                return reject(
+                  new Error(`Archivo no permitido: ${file.originalname}`)
+                );
+              }
 
-        const uuid = crypto.randomUUID();
-        const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
+              const uuid = crypto.randomUUID();
+              const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
 
-        return new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              resource_type: "raw",
-              folder: carpetaPedido,
-              public_id: nombreArchivoBase,
-              use_filename: false,
-              unique_filename: true,
-            },
-            (err, result) => {
-              if (err) return reject(err);
-              resolve({
-                originalname: file.originalname,
-                nombreSubido: result.public_id,
-                secure_url: result.secure_url,
-                format: result.format,
-              });
-            }
-          );
+              const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                  resource_type: "raw",
+                  folder: carpetaPedido,
+                  public_id: nombreArchivoBase,
+                  use_filename: false,
+                  unique_filename: true,
+                },
+                (err, result) => {
+                  fs.unlink(file.path, () => {}); // borrar archivo temporal
+                  if (err) return reject(err);
+                  resolve({
+                    originalname: file.originalname,
+                    nombreSubido: result.public_id,
+                    secure_url: result.secure_url,
+                    format: result.format,
+                  });
+                }
+              );
 
-          const readable = new Readable();
-          readable._read = () => {};
-          readable.push(file.buffer);
-          readable.push(null);
-          readable.pipe(uploadStream);
-        });
-      })
+              // Subir usando stream desde el archivo local
+              fs.createReadStream(file.path).pipe(uploadStream);
+            })
+        )
+      )
     );
-
-    // 🔔 Notificación por Telegram
-    try {
-      const mensajeTelegram = `📁 *Pedido nuevo recibido*\n👤 Cliente: *${cliente}*\n📞 Teléfono: ${telefono}\n🗂 Carpeta: ${carpetaPedido}\n📄 Archivos subidos: ${archivosSubidos.length}`;
-      await axios.post(`https://api.telegram.org/bot8305608507:AAFmAuTEB2VObgP9WrGccEKLGyLoCBqe-IM/sendMessage`, {
-        chat_id: 7713272523,
-        text: mensajeTelegram,
-        parse_mode: "Markdown"
-      });
-    } catch (error) {
-      console.error("Error al enviar notificación Telegram:", error.message);
-    }
+    await notificarTelegram({
+      cliente: clienteNombre,
+      telefono: clienteTelefono,
+      carpeta: carpetaPedido,
+      archivos: archivosSubidos,
+    });
 
     res.json({
       mensaje: "✅ Pedido recibido y archivos subidos correctamente",
@@ -120,4 +120,3 @@ const crearPedido = async (req, res, next) => {
 };
 
 module.exports = { crearPedido, upload };
-
