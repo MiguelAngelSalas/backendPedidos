@@ -7,6 +7,7 @@ const app = express();
 
 const allowedOrigins = [
   'https://impresionesatucasa.com.ar',
+  'https://www.impresionesatucasa.com.ar',
   'http://localhost:5173'
 ];
 
