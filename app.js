@@ -8,6 +8,7 @@ const app = express();
 const allowedOrigins = [
   'https://impresionesatucasa.com.ar',
   'https://www.impresionesatucasa.com.ar',
+  'https://impresiones.vercel.app',
   'http://localhost:5173'
 ];
 
