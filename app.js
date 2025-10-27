@@ -9,7 +9,8 @@ const allowedOrigins = [
   'https://impresionesatucasa.com.ar',
   'https://www.impresionesatucasa.com.ar',
   'https://impresiones.vercel.app',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  "https://api.impresionesatucasa.com.ar/api",
 ];
 
 app.use(cors({
@@ -38,6 +39,7 @@ app.get("/", (req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
+
 
 
 
