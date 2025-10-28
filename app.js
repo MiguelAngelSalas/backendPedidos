@@ -5,20 +5,7 @@ const errorHandler = require("./src/middlewares/errorHandler");
 
 const app = express();
 
-const allowedOrigins = [
-  *
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("CORS bloqueado para este origen"));
-    }
-  },
-  credentials: true
-}));
+app.use(cors());
 
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -35,6 +22,7 @@ app.get("/", (req, res) => {
 app.use(errorHandler);
 
 module.exports = app;
+
 
 
 
