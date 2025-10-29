@@ -29,9 +29,12 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 app.use("/api/pedidos", pedidosRoutes);
 
+
 app.get("/", (req, res) => {
   res.send("🚀 Backend funcionando correctamente");
 });
+
+
 
 // Middleware de errores
 app.use(errorHandler);

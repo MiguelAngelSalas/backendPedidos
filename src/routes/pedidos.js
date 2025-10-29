@@ -8,6 +8,11 @@ router.get("/ping", (req, res) => {
   res.send("📡 Ruta /api/pedidos activa");
 });
 
+router.get("/", (req, res) => {
+  res.send("✅ Backend conectado correctamente");
+});
+
+
 router.post("/", upload.any(), crearPedido);
 
 module.exports = router;
