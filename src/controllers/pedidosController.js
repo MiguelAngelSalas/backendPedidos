@@ -1,6 +1,6 @@
 const multer = require("multer");
 const fs = require("fs");
-const { default: pLimit } = require("p-limit");
+const pLimit  = require("p-limit");
 const crypto = require("crypto");
 const { Readable } = require("stream");
 const cloudinary = require("../utilidades/cloudinary");
