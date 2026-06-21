@@ -1,38 +1,17 @@
 const express = require("express");
-const cors = require("cors");
-const pedidosRoutes = require("./src/routes/pedidos");
-// CORREGIDO: "mercadopago" en minúsculas para que coincida exactamente con tu archivo src/routes/mercadopago.js
-const notificacionMP = require("./src/routes/mercadoPago"); 
-const errorHandler = require("./src/middlewares/errorHandler");
+const router = express.Router();
 
-const app = express();
+// Importamos los controladores
+const { generarFirmaSubida, crearPedido } = require("../controllers/pedidosController");
 
-const allowedOrigins = [
-  "https://impresionesatucasa.com.ar",
-  "http://localhost:5173",
-];
+// =======================================================
+// RUTAS DE PEDIDOS (/api/pedidos)
+// =======================================================
 
-// 👉 ACÁ ESTÁ LA MAGIA: Le pasamos la lista de dominios y habilitamos las credenciales
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true
-}));
+// 1. Ruta para autorizar la subida directa a Cloudflare R2
+router.post("/firma-r2", generarFirmaSubida);
 
-app.use(express.json({ limit: "20mb" }));
-app.use(express.urlencoded({ extended: true }));
+// 2. Ruta para procesar el JSON livianito, crear el Google Sheet y Mercado Pago
+router.post("/", crearPedido);
 
-// ===== RUTAS DEL SISTEMA =====
-app.use("/api/pedidos", pedidosRoutes);
-
-// CORREGIDO: Volvemos a acoplar la ruta para escuchar los Webhooks de Mercado Pago
-app.use("/api/mercadoPago", notificacionMP); 
-
-
-app.get("/", (req, res) => {
-  res.send("🚀 Backend funcionando correctamente");
-});
-
-// Middleware de errores
-app.use(errorHandler);
-
-module.exports = app;
+module.exports = router;
