@@ -1,22 +1,38 @@
 const express = require("express");
-// Sacamos 'upload' y traemos la nueva función 'generarFirmaSubida'
-const { crearPedido, generarFirmaSubida } = require("../controllers/pedidosController");
+const cors = require("cors");
+const pedidosRoutes = require("./src/routes/pedidos");
+// CORREGIDO: "mercadopago" en minúsculas para que coincida exactamente con tu archivo src/routes/mercadopago.js
+const notificacionMP = require("./src/routes/mercadoPago"); 
+const errorHandler = require("./src/middlewares/errorHandler");
 
-const router = express.Router();
+const app = express();
 
-// Ruta de prueba
-router.get("/ping", (req, res) => {
-  res.send("📡 Ruta /api/pedidos activa");
+const allowedOrigins = [
+  "https://impresionesatucasa.com.ar",
+  "http://localhost:5173",
+];
+
+// 👉 ACÁ ESTÁ LA MAGIA: Le pasamos la lista de dominios y habilitamos las credenciales
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true
+}));
+
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// ===== RUTAS DEL SISTEMA =====
+app.use("/api/pedidos", pedidosRoutes);
+
+// CORREGIDO: Volvemos a acoplar la ruta para escuchar los Webhooks de Mercado Pago
+app.use("/api/mercadoPago", notificacionMP); 
+
+
+app.get("/", (req, res) => {
+  res.send("🚀 Backend funcionando correctamente");
 });
 
-router.get("/", (req, res) => {
-  res.send("✅ Backend conectado correctamente");
-});
+// Middleware de errores
+app.use(errorHandler);
 
-// 🚀 NUEVA RUTA: Genera el permiso (URL pre-firmada) para subir a Cloudflare R2
-router.post("/firma-r2", generarFirmaSubida);
-
-// 📦 RUTA ACTUALIZADA: Ya no usa multer, recibe directamente el JSON súper liviano
-router.post("/", crearPedido);
-
-module.exports = router;
+module.exports = app;
