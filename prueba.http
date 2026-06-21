@@ -1,0 +1,9 @@
+POST http://localhost:3001/api/mercadoPago/webhooks/mercadopago?id=123456&type=payment
+Content-Type: application/json
+
+{
+    "action": "payment.created",
+    "data": {
+        "id": "123456"
+    }
+}

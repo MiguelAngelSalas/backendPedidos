@@ -1,5 +1,6 @@
 const express = require("express");
-const { crearPedido, upload } = require("../controllers/pedidosController");
+// Sacamos 'upload' y traemos la nueva función 'generarFirmaSubida'
+const { crearPedido, generarFirmaSubida } = require("../controllers/pedidosController");
 
 const router = express.Router();
 
@@ -12,7 +13,10 @@ router.get("/", (req, res) => {
   res.send("✅ Backend conectado correctamente");
 });
 
+// 🚀 NUEVA RUTA: Genera el permiso (URL pre-firmada) para subir a Cloudflare R2
+router.post("/firma-r2", generarFirmaSubida);
 
-router.post("/", upload.any(), crearPedido);
+// 📦 RUTA ACTUALIZADA: Ya no usa multer, recibe directamente el JSON súper liviano
+router.post("/", crearPedido);
 
 module.exports = router;

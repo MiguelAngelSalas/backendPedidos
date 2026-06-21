@@ -15,6 +15,7 @@ async function notificarTelegram(pedidoData) {
     .map((a) => `\n- [${a.originalname}](${a.secure_url})`)
     .join("")}
 📅 *Fecha:* ${new Date().toLocaleString("es-AR")}
+
   `;
 
   try {
@@ -24,6 +25,7 @@ async function notificarTelegram(pedidoData) {
       parse_mode: "Markdown",
       disable_web_page_preview: false,
     });
+
     console.log("✅ Notificación enviada a Telegram");
   } catch (error) {
     console.error("❌ Error enviando mensaje a Telegram:", error.message);

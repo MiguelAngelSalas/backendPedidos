@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const pedidosRoutes = require("./src/routes/pedidos");
+// CORREGIDO: "mercadopago" en minúsculas para que coincida exactamente con tu archivo src/routes/mercadopago.js
+const notificacionMP = require("./src/routes/mercadoPago"); 
 const errorHandler = require("./src/middlewares/errorHandler");
 
 const app = express();
@@ -10,31 +12,24 @@ const allowedOrigins = [
   "http://localhost:5173",
 ];
 
-/*app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("CORS bloqueado para este origen"));
-    }
-  },
+app.use(cors({
+  origin: allowedOrigins,
   credentials: true
-}));*/
-
-app.use(cors());
+}));
 
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-// Rutas
+// ===== RUTAS DEL SISTEMA =====
 app.use("/api/pedidos", pedidosRoutes);
+
+// CORREGIDO: Volvemos a acoplar la ruta para escuchar los Webhooks de Mercado Pago
+app.use("/api/mercadoPago", notificacionMP); 
 
 
 app.get("/", (req, res) => {
   res.send("🚀 Backend funcionando correctamente");
 });
-
-
 
 // Middleware de errores
 app.use(errorHandler);

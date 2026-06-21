@@ -1,123 +1,233 @@
-const multer = require("multer");
-const fs = require("fs");
-const pLimit  = require("p-limit");
 const crypto = require("crypto");
-const { Readable } = require("stream");
-const cloudinary = require("../utilidades/cloudinary");
 const notificarTelegram = require("../utilidades/notifiTelegram");
 
+// LIBRERÍAS PARA AWS S3 / CLOUDFLARE R2
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 
-// Guardar temporalmente los archivos en disco
-const upload = multer({ dest: "uploads/" });
+// LIBRERÍAS PARA GOOGLE SHEETS
+const { GoogleSpreadsheet } = require("google-spreadsheet");
+const { JWT } = require("google-auth-library");
 
-// Limitar a 3 subidas simultáneas
-const limit = pLimit(3);
+// LIBRERÍAS PARA MERCADO PAGO
+const { MercadoPagoConfig, Preference } = require("mercadopago");
 
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
+});
+
+// =======================================================
+// CONFIGURACIÓN DE CLOUDFLARE R2
+// =======================================================
+const s3Client = new S3Client({
+  region: "auto",
+  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+  // 1. Fuerza el formato de URL que le gusta a Cloudflare
+  forcePathStyle: true, 
+  // 2. Apaga el bug de la firma de archivo vacío ("AAAAAA==")
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
+});
+
+// =======================================================
+// 1. CONTROLADOR: GENERAR FIRMA DE SUBIDA (R2)
+// =======================================================
+const generarFirmaSubida = async (req, res) => {
+  try {
+    const { nombreArchivo, tipoArchivo } = req.body;
+
+    if (!nombreArchivo || !tipoArchivo) {
+      return res.status(400).json({ error: "Faltan datos del archivo." });
+    }
+
+    const nombreLimpio = nombreArchivo.replace(/\s+/g, '_');
+    const fileKey = `pedidos/${Date.now()}_${nombreLimpio}`;
+
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: fileKey,
+      ContentType: tipoArchivo,
+    });
+
+    const urlFirma = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+
+    res.status(200).json({ urlFirma, fileKey });
+  } catch (error) {
+    console.error("❌ [R2 ERROR] Error al generar firma:", error);
+    res.status(500).json({ error: "Hubo un problema al autorizar la subida." });
+  }
+};
+
+// =======================================================
+// FUNCIÓN AUXILIAR: GOOGLE SHEETS
+// =======================================================
+const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTelefono) => {
+  try {
+    console.log("\n📊 [SHEETS] Iniciando inserción en Google Sheets...");
+    const serviceAccountAuth = new JWT({
+      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+
+    const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, serviceAccountAuth);
+    await doc.loadInfo();
+    const sheet = doc.sheetsByIndex[0]; 
+
+    console.log(`📊 [SHEETS] Conectado. Procesando ${archivosSubidos.length} archivo(s)...`);
+
+    for (const archivo of archivosSubidos) {
+      const idPedido = crypto.randomUUID(); 
+
+      console.log(`✍️ [SHEETS] Agregando fila para el cliente: ${clienteNombre} | ID: ${idPedido}`);
+      
+      await sheet.addRow({
+        ID_Pedido: idPedido,
+        Cliente: clienteNombre,
+        Telefono: clienteTelefono,
+        Tipo_Papel: archivo.tipoPapel, // Ahora lo sacamos directo del objeto limpio
+        Estado_Pago: "PENDIENTE", 
+        Estado_Pedido: "RECIBIDO", 
+        Fecha: new Date().toLocaleDateString("es-AR"),
+        Archivo_URL: archivo.secure_url
+      });
+    }
+    console.log("✅ [SHEETS] Pedido registrado exitosamente\n");
+  } catch (error) {
+    console.error("❌ [SHEETS ERROR] Error al escribir en Google Sheets:", error);
+  }
+};
+
+// =======================================================
+// 2. CONTROLADOR: CREAR PEDIDO
+// =======================================================
 const crearPedido = async (req, res, next) => {
   try {
-    console.log("===== Datos recibidos en /api/pedidos =====");
-    console.log("req.body:", req.body);
-    console.log("req.files:", req.files);
+    console.log("\n=======================================================");
+    console.log("📦 [NUEVO PEDIDO] Petición liviana recibida en /api/pedidos");
+    console.log("=======================================================");
 
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: "No se enviaron archivos" });
+    // LOG DE DEPURACIÓN CLAVE: Verificamos qué está llegando exactamente
+    console.log("🔍 BODY COMPLETO RECIBIDO:", req.body);
+
+    const { cliente, telefono, pedido } = req.body;
+
+    if (!cliente || !telefono || !pedido) {
+      console.log("⚠️ [ALERTA] Faltan datos obligatorios.");
+      return res.status(400).json({ error: "Faltan datos del cliente o pedido." });
     }
 
-    const { cliente, telefono } = req.body;
-    let tiposPapel = [];
+    console.log(`👤 Cliente: "${cliente}" | Teléfono: "${telefono}"`);
 
-    try {
-      const pedido = JSON.parse(req.body.pedido || "{}");
-      if (!pedido.items || !Array.isArray(pedido.items)) {
-        return res.status(400).json({ error: "Pedido sin items válidos" });
-      }
-      tiposPapel = pedido.items
-        .filter((item) => item.detalles?.tipo === "impresion")
-        .map((item) => item.detalles.papel);
-    } catch (err) {
-      return res.status(400).json({ error: "Pedido mal formado" });
+    // El frontend ahora nos manda un JSON listo, pero atajamos por si llega como string
+    let itemsCarrito = [];
+    if (typeof pedido === 'string') {
+      itemsCarrito = JSON.parse(pedido).items || [];
+    } else {
+      itemsCarrito = pedido.items || [];
     }
 
-    if (!cliente || !telefono) {
-      return res.status(400).json({ error: "Faltan datos del cliente" });
+    if (itemsCarrito.length === 0) {
+      return res.status(400).json({ error: "El carrito está vacío." });
     }
 
-    if (typeof tiposPapel === "string") tiposPapel = [tiposPapel];
-    if (!Array.isArray(tiposPapel)) {
-      return res.status(400).json({ error: "Tipos de papel inválidos" });
-    }
+    console.log(`🛒 Items detectados en carrito: ${itemsCarrito.length}`);
 
-    if (tiposPapel.length !== req.files.length) {
-      return res
-        .status(400)
-        .json({ error: "Cantidad de tipos de papel no coincide con archivos" });
-    }
-
+    // Normalización de datos para el reporte
     const clienteNombre = cliente.trim().replace(/\s+/g, "_");
     const clienteTelefono = telefono.trim().replace(/\s+/g, "_");
-    const fechaPedido = Date.now();
-    const carpetaPedido = `pedidos/${clienteNombre}_${clienteTelefono}_${fechaPedido}`;
+    const carpetaPedido = `pedidos_${clienteNombre}_${Date.now()}`;
 
-    const archivosSubidos = await Promise.all(
-      req.files.map((file, idx) =>
-        limit(
-          () =>
-            new Promise((resolve, reject) => {
-              const tipoPapel = tiposPapel[idx] || "desconocido";
+    // Armamos el arreglo de archivos basado en las rutas que devolvió Cloudflare (fileKey)
+    const archivosSubidos = itemsCarrito
+      .filter((item) => item.detalles?.tipo === "impresion")
+      .map((item) => {
+        const fileKey = item.detalles.archivo; // Ej: "pedidos/123_apunte.pdf"
+        return {
+          originalname: fileKey.split('/').pop(),
+          fileKey: fileKey,
+          tipoPapel: item.detalles.papel || "desconocido",
+          // Nota: Reemplazá 'pub-xxx.r2.dev' por tu dominio público de R2 si lo activaste
+          secure_url: `pub-fc415dccb44a4362a6b9e0e64bafd4b4.r2.dev/${fileKey}`
+        };
+      });
 
-              if (file.mimetype !== "application/pdf") {
-                fs.unlink(file.path, () => {});
-                return reject(
-                  new Error(`Archivo no permitido: ${file.originalname}`)
-                );
-              }
-
-              const uuid = crypto.randomUUID();
-              const nombreArchivoBase = `${clienteNombre}_${clienteTelefono}_${tipoPapel}_${fechaPedido}_${uuid}`;
-
-              const uploadStream = cloudinary.uploader.upload_stream(
-                {
-                  resource_type: "raw",
-                  folder: carpetaPedido,
-                  public_id: nombreArchivoBase,
-                  use_filename: false,
-                  unique_filename: true,
-                },
-                (err, result) => {
-                  fs.unlink(file.path, () => {}); // borrar archivo temporal
-                  if (err) return reject(err);
-                  resolve({
-                    originalname: file.originalname,
-                    nombreSubido: result.public_id,
-                    secure_url: result.secure_url,
-                    format: result.format,
-                  });
-                }
-              );
-
-              // Subir usando stream desde el archivo local
-              fs.createReadStream(file.path).pipe(uploadStream);
-            })
-        )
-      )
-    );
+    console.log("✉️ [TELEGRAM] Enviando reporte al bot...");
     await notificarTelegram({
       cliente: clienteNombre,
       telefono: clienteTelefono,
       carpeta: carpetaPedido,
       archivos: archivosSubidos,
     });
+    console.log("✅ [TELEGRAM] Notificación enviada.");
+
+    // MAPEAR ITEMS PARA MERCADO PAGO
+    console.log("💳 [MERCADO PAGO] Estructurando items de la pasarela...");
+    const itemsMercadoPago = itemsCarrito.map((item) => {
+      let precioFinalUnitario = item.price || item.precioUnitario || 0; 
+      const cantidad = item.cantidad || 1;
+
+      return {
+        id: item.id || "impresion",
+        title: item.name || "Servicio de impresion",
+        quantity: cantidad,
+        unit_price: Number(precioFinalUnitario),
+        currency_id: "ARS",
+      };
+    });
+
+    // INYECTAR DATOS EN GOOGLE SHEETS
+    await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono);
+
+    // PREFERENCIA DE MERCADO PAGO
+    console.log("🔗 [MERCADO PAGO] Solicitando creación de preferencia...");
+    const preference = new Preference(client);
+    
+    const responseMP = await preference.create({
+      body: {
+        items: itemsMercadoPago,
+        payer: {
+          name: clienteNombre,
+          phone: {
+            number: clienteTelefono,
+          },
+        },
+        back_urls: {
+          success: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
+          failure: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
+          pending: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
+        },
+        auto_return: "approved", 
+        notification_url: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
+        metadata: {
+          cliente_nombre: clienteNombre
+        }
+      },
+    });
+
+    console.log(`✨ [MERCADO PAGO] Preferencia generada con éxito.`);
+    console.log(`🔗 Init Point: ${responseMP.init_point}`);
+    console.log("=======================================================\n");
 
     res.json({
-      mensaje: "✅ Pedido recibido y archivos subidos correctamente",
+      mensaje: "✅ Pedido registrado correctamente",
       cliente: clienteNombre,
       telefono: clienteTelefono,
-      carpeta: carpetaPedido,
       archivos: archivosSubidos,
+      initPoint: responseMP.init_point,
     });
   } catch (err) {
+    console.error("\n❌ [ERROR CRÍTICO EN CREAR PEDIDO]:", err);
     next(err);
   }
 };
 
-module.exports = { crearPedido, upload };
+// Exportamos bajo el formato CommonJS, sacando 'upload'
+module.exports = { 
+  generarFirmaSubida, 
+  crearPedido 
+};
