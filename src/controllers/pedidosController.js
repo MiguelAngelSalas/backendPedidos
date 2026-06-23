@@ -196,13 +196,15 @@ const crearPedido = async (req, res, next) => {
             number: clienteTelefono,
           },
         },
+        // ===== ACÁ ESTÁ LA MAGIA DE PRODUCCIÓN =====
         back_urls: {
-          success: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
-          failure: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
-          pending: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
+          success: "https://impresionesatucasa.com.ar",
+          failure: "https://impresionesatucasa.com.ar",
+          pending: "https://impresionesatucasa.com.ar",
         },
         auto_return: "approved", 
-        notification_url: "https://uncivil-rural-alkalize.ngrok-free.dev/api/mercadoPago/webhooks/mercadopago",
+        notification_url: "https://backendpedidos.onrender.com/api/mercadoPago/webhooks/mercadopago",
+        // ===========================================
         metadata: {
           cliente_nombre: clienteNombre
         }
