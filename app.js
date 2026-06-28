@@ -11,24 +11,11 @@ const allowedOrigins = [
   "https://impresionesatucasa.com.ar",
   "https://www.impresionesatucasa.com.ar", // Sumamos el www por seguridad
   "http://localhost:5173",
+  "http://localhost:3000",
 ];
 
 // ===== CONFIGURACIÓN CORS REFORZADA =====
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como Postman o el propio servidor)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Bloqueado por CORS'));
-    }
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // El OPTIONS es el que destraba tu error
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
+app.use(cors()); // Esto permite el acceso desde cualquier lugar, sin filtros.
 // ========================================
 
 app.use(express.json({ limit: "20mb" }));
