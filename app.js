@@ -16,10 +16,20 @@ const allowedOrigins = [
 
 // ===== CONFIGURACIÓN CORS REFORZADA =====
 app.use(cors({
-  origin: "*", // Esto abre la puerta a todos
-  methods: ["GET", "POST", "OPTIONS"],
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como Postman o el propio servidor)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por CORS'));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // El OPTIONS es el que destraba tu error
   allowedHeaders: ["Content-Type", "Authorization"]
-})); // Esto permite el acceso desde cualquier lugar, sin filtros.
+}));
 // ========================================
 
 app.use(express.json({ limit: "20mb" }));
