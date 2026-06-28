@@ -15,7 +15,11 @@ const allowedOrigins = [
 ];
 
 // ===== CONFIGURACIÓN CORS REFORZADA =====
-app.use(cors()); // Esto permite el acceso desde cualquier lugar, sin filtros.
+app.use(cors({
+  origin: "*", // Esto abre la puerta a todos
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+})); // Esto permite el acceso desde cualquier lugar, sin filtros.
 // ========================================
 
 app.use(express.json({ limit: "20mb" }));
