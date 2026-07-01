@@ -90,10 +90,12 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
         Cliente: clienteNombre,
         Telefono: clienteTelefono,
         Tipo_Papel: archivo.tipoPapel, // Ahora lo sacamos directo del objeto limpio
+        Cantidad_de_copias: archivo.cantidad,
         Estado_Pago: "PENDIENTE", 
         Estado_Pedido: "RECIBIDO", 
         Fecha: new Date().toLocaleDateString("es-AR"),
-        Archivo_URL: archivo.secure_url
+        Archivo_URL: archivo.secure_url,
+        linkPagoMp: responseMp.init_point
       });
     }
     console.log("✅ [SHEETS] Pedido registrado exitosamente\n");
