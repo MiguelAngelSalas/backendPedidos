@@ -47,6 +47,7 @@ const generarFirmaSubida = async (req, res) => {
 
 const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTelefono, linkPago) => {
   try {
+    console.log("📊 [SHEETS] Escribiendo datos en Google Sheets...");
     const serviceAccountAuth = new JWT({
       email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
       key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"),
@@ -71,6 +72,7 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
         linkPagoMp: linkPago
       });
     }
+    console.log("✅ [SHEETS] Pedido registrado correctamente.");
   } catch (error) {
     console.error("❌ [SHEETS ERROR]:", error);
   }
@@ -80,6 +82,8 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
 // CONTROLADOR PRINCIPAL
 // =======================================================
 const crearPedido = async (req, res, next) => {
+  console.log("🔥 [BACKEND] Petición recibida en /api/pedidos. Body:", JSON.stringify(req.body));
+  
   try {
     const { cliente, telefono, pedido } = req.body;
     if (!cliente || !telefono || !pedido) return res.status(400).json({ error: "Faltan datos." });
@@ -96,12 +100,15 @@ const crearPedido = async (req, res, next) => {
         secure_url: `pub-fc415dccb44a4362a6b9e0e64bafd4b4.r2.dev/${item.detalles.archivo}`
       }));
 
-    // 1. Intentar notificar Telegram
+    // 1. Notificación Telegram
+    console.log("✉️ [TELEGRAM] Iniciando...");
     try {
       await notificarTelegram({ cliente: clienteNombre, telefono: clienteTelefono, archivos: archivosSubidos });
+      console.log("✅ [TELEGRAM] Enviado.");
     } catch (e) { console.error("❌ [TELEGRAM ERROR]:", e); }
 
     // 2. Crear preferencia Mercado Pago
+    console.log("💳 [MERCADO PAGO] Creando preferencia...");
     const preference = new Preference(client);
     const responseMP = await preference.create({
       body: {
@@ -111,6 +118,7 @@ const crearPedido = async (req, res, next) => {
         notification_url: "https://backendpedidos.onrender.com/api/mercadoPago/webhooks/mercadopago"
       },
     });
+    console.log("✨ [MERCADO PAGO] Preferencia creada. ID:", responseMP.id);
 
     // 3. Guardar en Sheets
     await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point);
