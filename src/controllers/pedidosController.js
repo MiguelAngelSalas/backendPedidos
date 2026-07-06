@@ -85,8 +85,9 @@ const crearPedido = async (req, res, next) => {
   console.log("🔥 [BACKEND] Petición recibida en /api/pedidos. Body:", JSON.stringify(req.body));
   
   try {
-    const { cliente, telefono, pedido } = req.body;
-    if (!cliente || !telefono || !pedido) return res.status(400).json({ error: "Faltan datos." });
+    // 1. Agregamos montoDescuento a la desestructuración
+    const { cliente, telefono, pedido, precioEnvio, montoDescuento } = req.body;
+    if (!cliente || !telefono || !pedido ) return res.status(400).json({ error: "Faltan datos." });
 
     let itemsCarrito = typeof pedido === 'string' ? JSON.parse(pedido).items : pedido.items;
     const clienteNombre = cliente.trim().replace(/\s+/g, "_");
@@ -100,19 +101,46 @@ const crearPedido = async (req, res, next) => {
         secure_url: `pub-fc415dccb44a4362a6b9e0e64bafd4b4.r2.dev/${item.detalles.archivo}`
       }));
 
-    // 1. Notificación Telegram
+    // 2. Notificación Telegram
     console.log("✉️ [TELEGRAM] Iniciando...");
     try {
       await notificarTelegram({ cliente: clienteNombre, telefono: clienteTelefono, archivos: archivosSubidos });
       console.log("✅ [TELEGRAM] Enviado.");
     } catch (e) { console.error("❌ [TELEGRAM ERROR]:", e); }
 
-    // 2. Crear preferencia Mercado Pago
+    // 3. Crear array de ítems (Impresiones + Envío)
+    console.log("💳 [MERCADO PAGO] Armando ítems...");
+    let itemsMP = [
+      ...itemsCarrito.map(i => ({ 
+        title: i.name, 
+        quantity: i.cantidad, 
+        unit_price: Number(i.price), 
+        currency_id: "ARS" 
+      })),
+      { 
+        title: "Envío", 
+        quantity: 1, 
+        unit_price: Number(precioEnvio || 0), 
+        currency_id: "ARS" 
+      }
+    ];
+
+    // 4. Si hay descuento, lo sumamos como número negativo
+    if (montoDescuento && Number(montoDescuento) > 0) {
+      itemsMP.push({
+        title: "Descuento aplicado",
+        quantity: 1,
+        unit_price: -Number(montoDescuento),
+        currency_id: "ARS"
+      });
+    }
+
+    // 5. Crear preferencia Mercado Pago
     console.log("💳 [MERCADO PAGO] Creando preferencia...");
     const preference = new Preference(client);
     const responseMP = await preference.create({
       body: {
-        items: itemsCarrito.map(i => ({ title: i.name, quantity: i.cantidad, unit_price: Number(i.price), currency_id: "ARS" })),
+        items: itemsMP, // Pasamos el array que acabamos de armar
         back_urls: { success: "https://impresionesatucasa.com.ar", failure: "https://impresionesatucasa.com.ar", pending: "https://impresionesatucasa.com.ar" },
         auto_return: "approved",
         notification_url: "https://backendpedidos.onrender.com/api/mercadoPago/webhooks/mercadopago"
@@ -120,7 +148,7 @@ const crearPedido = async (req, res, next) => {
     });
     console.log("✨ [MERCADO PAGO] Preferencia creada. ID:", responseMP.id);
 
-    // 3. Guardar en Sheets
+    // 6. Guardar en Sheets
     await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point);
 
     res.json({ mensaje: "✅ Pedido registrado", initPoint: responseMP.init_point });
