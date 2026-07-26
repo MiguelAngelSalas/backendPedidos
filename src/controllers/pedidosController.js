@@ -45,7 +45,7 @@ const generarFirmaSubida = async (req, res) => {
   }
 };
 
-const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTelefono, linkPago) => {
+const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTelefono, linkPago, domicilio, localidad) => {
   try {
     console.log("📊 [SHEETS] Escribiendo datos en Google Sheets...");
     const serviceAccountAuth = new JWT({
@@ -69,7 +69,9 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
         Estado_Pedido: "RECIBIDO",
         Fecha: new Date().toLocaleDateString("es-AR"),
         Archivo_URL: archivo.secure_url,
-        linkPagoMp: linkPago
+        linkPagoMp: linkPago,
+        Domicilio: domicilio || "-",
+        Localidad: localidad || "-",
       });
     }
     console.log("✅ [SHEETS] Pedido registrado correctamente.");
@@ -86,7 +88,7 @@ const crearPedido = async (req, res, next) => {
   
   try {
     // 1. Agregamos montoDescuento a la desestructuración
-    const { cliente, telefono, pedido, precioEnvio, montoDescuento } = req.body;
+    const { cliente, telefono, pedido, precioEnvio, montoDescuento, domicilio, localidad } = req.body;
     if (!cliente || !telefono || !pedido ) return res.status(400).json({ error: "Faltan datos." });
 
     let itemsCarrito = typeof pedido === 'string' ? JSON.parse(pedido).items : pedido.items;
@@ -141,7 +143,7 @@ const crearPedido = async (req, res, next) => {
     const responseMP = await preference.create({
       body: {
         items: itemsMP, // Pasamos el array que acabamos de armar
-        back_urls: { success: "https://impresionesatucasa.com.ar", failure: "https://impresionesatucasa.com.ar", pending: "https://impresionesatucasa.com.ar" },
+        back_urls: { success: "https://impresionesatucasa.com.ar/compraExitosa", failure: "https://impresionesatucasa.com.ar", pending: "https://impresionesatucasa.com.ar" },
         auto_return: "approved",
         notification_url: "https://backendpedidos.onrender.com/api/mercadoPago/webhooks/mercadopago"
       },
@@ -149,7 +151,7 @@ const crearPedido = async (req, res, next) => {
     console.log("✨ [MERCADO PAGO] Preferencia creada. ID:", responseMP.id);
 
     // 6. Guardar en Sheets
-    await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point);
+    await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point, domicilio, localidad);
 
     res.json({ mensaje: "✅ Pedido registrado", initPoint: responseMP.init_point });
   } catch (err) {
