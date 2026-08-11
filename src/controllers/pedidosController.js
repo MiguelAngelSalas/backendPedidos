@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const notificarTelegram = require("../utilidades/notifiTelegram");
 const { Pool } = require('pg');
 
+console.log("🔍 LEYENDO DATABASE_URL:", process.env.DATABASE_URL ? "¡LA ENCONTRÓ!" : "¡ESTÁ VACÍA!");
 // Inicializamos la conexión a Neon
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
