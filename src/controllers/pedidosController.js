@@ -2,10 +2,13 @@ const crypto = require("crypto");
 const notificarTelegram = require("../utilidades/notifiTelegram");
 const { Pool } = require('pg');
 
-console.log("🔍 LEYENDO DATABASE_URL:", process.env.DATABASE_URL ? "¡LA ENCONTRÓ!" : "¡ESTÁ VACÍA!");
-// Inicializamos la conexión a Neon
+console.log("🔍 DATABASE_URL arranca con:", process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 15) : "Nada");// Inicializamos la conexión a Neon
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  // El .replace borra mágicamente cualquier comilla que se te haya colado en Render
+  connectionString: process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/['"]/g, '') : '',
+  ssl: {
+    rejectUnauthorized: false // Esto obliga a Render a conectarse a Neon de forma segura
+  }
 });
 
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
