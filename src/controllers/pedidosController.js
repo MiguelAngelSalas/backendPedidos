@@ -1,5 +1,11 @@
 const crypto = require("crypto");
 const notificarTelegram = require("../utilidades/notifiTelegram");
+const { Pool } = require('pg');
+
+// Inicializamos la conexión a Neon
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+});
 
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
@@ -25,6 +31,8 @@ const s3Client = new S3Client({
   responseChecksumValidation: "WHEN_REQUIRED",
 });
 
+// NUEVO: Ruta absoluta al archivo cupones.json (busca en la raíz de tu proyecto)
+
 // =======================================================
 // FUNCIONES AUXILIARES
 // =======================================================
@@ -45,7 +53,7 @@ const generarFirmaSubida = async (req, res) => {
   }
 };
 
-const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTelefono, linkPago, domicilio, localidad) => {
+const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTelefono, linkPago, domicilio, localidad, codigoUsado) => {
   try {
     console.log("📊 [SHEETS] Escribiendo datos en Google Sheets...");
     const serviceAccountAuth = new JWT({
@@ -72,6 +80,9 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
         linkPagoMp: linkPago,
         Domicilio: domicilio || "-",
         Localidad: localidad || "-",
+        Cupon_Usado: codigoUsado || "Ninguno",
+        // ACÁ ESTÁ EL CAMBIO CLAVE: Usamos comillas para el nombre con espacios
+        "Con anillado": archivo.quiereAnillado ? `Sí ($${archivo.costoAnillado})` : "No"
       });
     }
     console.log("✅ [SHEETS] Pedido registrado correctamente.");
@@ -81,14 +92,69 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
 };
 
 // =======================================================
+// NUEVOS CONTROLADORES PARA LOS CUPONES
+// =======================================================
+
+const validarCupon = async (req, res) => {
+  const { codigo } = req.query;
+  if (!codigo) return res.status(400).json({ error: "Falta código" });
+
+  try {
+    const codigoUpper = codigo.toUpperCase();
+    
+    // Consultamos la base de datos
+    const result = await pool.query('SELECT usado FROM cupones WHERE codigo = $1', [codigoUpper]);
+
+    if (result.rows.length > 0) {
+      const cupon = result.rows[0];
+      if (cupon.usado === false) {
+        return res.json({ valido: true, mensaje: "Código disponible" });
+      } else {
+        return res.json({ valido: false, error: "Este código ya fue utilizado" });
+      }
+    } else {
+      return res.json({ valido: false, error: "Código inexistente" });
+    }
+  } catch (error) {
+    console.error("❌ [ERROR BD CUPONES]:", error);
+    return res.status(500).json({ error: "Error al validar en la base de datos" });
+  }
+};
+
+const quemarCupon = async (req, res) => {
+  const { codigo } = req.body;
+  if (!codigo) return res.status(400).json({ error: "Falta el código" });
+
+  try {
+    const codigoUpper = codigo.toUpperCase();
+    
+    // Actualizamos el cupón SOLO si existe y está en false
+    const result = await pool.query(
+      'UPDATE cupones SET usado = true WHERE codigo = $1 AND usado = false RETURNING *',
+      [codigoUpper]
+    );
+
+    if (result.rowCount > 0) {
+      console.log(`🔥 [CUPONES] El código ${codigoUpper} fue quemado en Neon con éxito.`);
+      return res.json({ exito: true, mensaje: "Cupón quemado correctamente" });
+    } else {
+      return res.json({ exito: false, mensaje: "El cupón ya estaba usado o no existe" });
+    }
+  } catch (error) {
+    console.error("❌ [ERROR BD CUPONES]:", error);
+    return res.status(500).json({ error: "Error al actualizar en la base de datos" });
+  }
+};
+
+
+// =======================================================
 // CONTROLADOR PRINCIPAL
 // =======================================================
 const crearPedido = async (req, res, next) => {
   console.log("🔥 [BACKEND] Petición recibida en /api/pedidos. Body:", JSON.stringify(req.body));
   
   try {
-    // 1. Agregamos montoDescuento a la desestructuración
-    const { cliente, telefono, pedido, precioEnvio, montoDescuento, domicilio, localidad } = req.body;
+    const { cliente, telefono, pedido, precioEnvio, montoDescuento, domicilio, localidad, codigoUsado } = req.body;
     if (!cliente || !telefono || !pedido ) return res.status(400).json({ error: "Faltan datos." });
 
     let itemsCarrito = typeof pedido === 'string' ? JSON.parse(pedido).items : pedido.items;
@@ -100,7 +166,9 @@ const crearPedido = async (req, res, next) => {
       .map((item) => ({
         tipoPapel: item.detalles.papel || "desconocido",
         cantidad: item.cantidad || 1,
-        secure_url: `pub-fc415dccb44a4362a6b9e0e64bafd4b4.r2.dev/${item.detalles.archivo}`
+        secure_url: `pub-fc415dccb44a4362a6b9e0e64bafd4b4.r2.dev/${item.detalles.archivo}`,
+        quiereAnillado: item.detalles.quiereAnillado || false,
+        costoAnillado: item.detalles.costoAnillado || 0
       }));
 
     // 2. Notificación Telegram
@@ -142,7 +210,7 @@ const crearPedido = async (req, res, next) => {
     const preference = new Preference(client);
     const responseMP = await preference.create({
       body: {
-        items: itemsMP, // Pasamos el array que acabamos de armar
+        items: itemsMP,
         back_urls: { success: "https://impresionesatucasa.com.ar/compraExitosa", failure: "https://impresionesatucasa.com.ar", pending: "https://impresionesatucasa.com.ar" },
         auto_return: "approved",
         notification_url: "https://backendpedidos.onrender.com/api/mercadoPago/webhooks/mercadopago"
@@ -151,6 +219,7 @@ const crearPedido = async (req, res, next) => {
     console.log("✨ [MERCADO PAGO] Preferencia creada. ID:", responseMP.id);
 
     // 6. Guardar en Sheets
+    // Nota: El string del domicilio ya trae el "🎁 CÓDIGO APLICADO" gracias al frontend
     await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point, domicilio, localidad);
 
     res.json({ mensaje: "✅ Pedido registrado", initPoint: responseMP.init_point });
@@ -160,4 +229,5 @@ const crearPedido = async (req, res, next) => {
   }
 };
 
-module.exports = { generarFirmaSubida, crearPedido };
+// NUEVO: Exportamos también los dos controladores nuevos para que los uses en tus rutas
+module.exports = { generarFirmaSubida, crearPedido, validarCupon, quemarCupon };
