@@ -2,21 +2,20 @@ const crypto = require("crypto");
 const notificarTelegram = require("../utilidades/notifiTelegram");
 const { Pool } = require('pg');
 
-console.log("🔍 DATABASE_URL arranca con:", process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 15) : "Nada");// Inicializamos la conexión a Neon
+console.log("🔍 DATABASE_URL arranca con:", process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 15) : "Nada");
+
+// Inicializamos la conexión a Neon (SOLO PARA CUPONES)
 const pool = new Pool({
-  // El .replace borra mágicamente cualquier comilla que se te haya colado en Render
   connectionString: process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/['"]/g, '') : '',
   ssl: {
-    rejectUnauthorized: false // Esto obliga a Render a conectarse a Neon de forma segura
+    rejectUnauthorized: false
   }
 });
 
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
-
 const { GoogleSpreadsheet } = require("google-spreadsheet");
 const { JWT } = require("google-auth-library");
-
 const { MercadoPagoConfig, Preference } = require("mercadopago");
 
 const client = new MercadoPagoConfig({
@@ -35,19 +34,24 @@ const s3Client = new S3Client({
   responseChecksumValidation: "WHEN_REQUIRED",
 });
 
-// NUEVO: Ruta absoluta al archivo cupones.json (busca en la raíz de tu proyecto)
-
 // =======================================================
 // FUNCIONES AUXILIARES
 // =======================================================
 
 const generarFirmaSubida = async (req, res) => {
   try {
-    const { nombreArchivo, tipoArchivo } = req.body;
+    const { nombreArchivo, tipoArchivo, idPedido } = req.body; 
     if (!nombreArchivo || !tipoArchivo) return res.status(400).json({ error: "Faltan datos." });
     
-    const fileKey = `pedidos/${Date.now()}_${nombreArchivo.replace(/\s+/g, '_')}`;
-    const command = new PutObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: fileKey, ContentType: tipoArchivo });
+    // Agrupa los archivos bajo un directorio único del cliente/pedido
+    const carpeta = idPedido ? `pedidos/${idPedido}` : 'pedidos/sueltos';
+    const fileKey = `${carpeta}/${Date.now()}_${nombreArchivo.replace(/\s+/g, '_')}`;
+    
+    const command = new PutObjectCommand({ 
+      Bucket: process.env.R2_BUCKET_NAME, 
+      Key: fileKey, 
+      ContentType: tipoArchivo 
+    });
     const urlFirma = await getSignedUrl(s3Client, command, { expiresIn: 300 });
 
     res.status(200).json({ urlFirma, fileKey });
@@ -76,7 +80,7 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
         Cliente: clienteNombre,
         Telefono: clienteTelefono,
         Tipo_Papel: archivo.tipoPapel,
-        Cantidad_de_copias: archivo.cantidad,
+        Cantidad_de_copias: archivo.copias,
         Estado_Pago: "PENDIENTE",
         Estado_Pedido: "RECIBIDO",
         Fecha: new Date().toLocaleDateString("es-AR"),
@@ -85,8 +89,8 @@ const guardarEnGoogleSheets = async (archivosSubidos, clienteNombre, clienteTele
         Domicilio: domicilio || "-",
         Localidad: localidad || "-",
         Cupon_Usado: codigoUsado || "Ninguno",
-        // ACÁ ESTÁ EL CAMBIO CLAVE: Usamos comillas para el nombre con espacios
-        "Con anillado": archivo.quiereAnillado ? `Sí ($${archivo.costoAnillado})` : "No"
+        "Con anillado": archivo.quiereAnillado ? `Sí ($${archivo.costoAnillado})` : "No",
+        tamanioHojas: archivo.tamanioHojas
       });
     }
     console.log("✅ [SHEETS] Pedido registrado correctamente.");
@@ -105,8 +109,6 @@ const validarCupon = async (req, res) => {
 
   try {
     const codigoUpper = codigo.toUpperCase();
-    
-    // Consultamos la base de datos
     const result = await pool.query('SELECT usado FROM cupones WHERE codigo = $1', [codigoUpper]);
 
     if (result.rows.length > 0) {
@@ -131,8 +133,6 @@ const quemarCupon = async (req, res) => {
 
   try {
     const codigoUpper = codigo.toUpperCase();
-    
-    // Actualizamos el cupón SOLO si existe y está en false
     const result = await pool.query(
       'UPDATE cupones SET usado = true WHERE codigo = $1 AND usado = false RETURNING *',
       [codigoUpper]
@@ -150,15 +150,15 @@ const quemarCupon = async (req, res) => {
   }
 };
 
-
 // =======================================================
 // CONTROLADOR PRINCIPAL
 // =======================================================
 const crearPedido = async (req, res, next) => {
-  console.log("🔥 [BACKEND] Petición recibida en /api/pedidos. Body:", JSON.stringify(req.body));
+  console.log("🔥 [BACKEND] Petición recibida en /api/pedidos.");
   
   try {
     const { cliente, telefono, pedido, precioEnvio, montoDescuento, domicilio, localidad, codigoUsado } = req.body;
+    console.log(JSON.stringify(pedido))
     if (!cliente || !telefono || !pedido ) return res.status(400).json({ error: "Faltan datos." });
 
     let itemsCarrito = typeof pedido === 'string' ? JSON.parse(pedido).items : pedido.items;
@@ -169,11 +169,13 @@ const crearPedido = async (req, res, next) => {
       .filter((item) => item.detalles?.tipo === "impresion")
       .map((item) => ({
         tipoPapel: item.detalles.papel || "desconocido",
-        cantidad: item.cantidad || 1,
-        secure_url: `pub-fc415dccb44a4362a6b9e0e64bafd4b4.r2.dev/${item.detalles.archivo}`,
+        copias: item.detalles.copias || item.copias || 1,
+        secure_url: `${item.detalles.archivo}`,
         quiereAnillado: item.detalles.quiereAnillado || false,
-        costoAnillado: item.detalles.costoAnillado || 0
+        costoAnillado: item.detalles.costoAnillado || 0,
+        tamanioHojas: item.detalles.tamanioSeleccionado||"Hoja A4"
       }));
+    console.log(JSON.stringify(archivosSubidos))
 
     // 2. Notificación Telegram
     console.log("✉️ [TELEGRAM] Iniciando...");
@@ -223,8 +225,7 @@ const crearPedido = async (req, res, next) => {
     console.log("✨ [MERCADO PAGO] Preferencia creada. ID:", responseMP.id);
 
     // 6. Guardar en Sheets
-    // Nota: El string del domicilio ya trae el "🎁 CÓDIGO APLICADO" gracias al frontend
-    await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point, domicilio, localidad);
+    await guardarEnGoogleSheets(archivosSubidos, clienteNombre, clienteTelefono, responseMP.init_point, domicilio, localidad, codigoUsado);
 
     res.json({ mensaje: "✅ Pedido registrado", initPoint: responseMP.init_point });
   } catch (err) {
@@ -233,5 +234,4 @@ const crearPedido = async (req, res, next) => {
   }
 };
 
-// NUEVO: Exportamos también los dos controladores nuevos para que los uses en tus rutas
 module.exports = { generarFirmaSubida, crearPedido, validarCupon, quemarCupon };
